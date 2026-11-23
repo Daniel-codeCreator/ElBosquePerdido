@@ -23,7 +23,7 @@ export function updatePlayer(player, input, delta, world) {
   const direction = forward.scale(input.forward - input.back).add(right.scale(input.right - input.left));
   if (direction.lengthSquared() > 0) direction.normalize();
   player.crouching = input.crouch;
-  const targetSpeed = player.crouching ? 2 : input.run ? 7.4 : 4.1;
+  const targetSpeed = player.crouching ? 2 : input.run ? 8.7 : 5.7;
   const smoothing = direction.lengthSquared() ? 12 : 9;
   player.velocity.x += (direction.x * targetSpeed - player.velocity.x) * Math.min(1, smoothing * delta);
   player.velocity.z += (direction.z * targetSpeed - player.velocity.z) * Math.min(1, smoothing * delta);
