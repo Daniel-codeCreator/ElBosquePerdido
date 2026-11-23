@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07100d" />
+    <title>El Bosque de los Desaparecidos</title>
+  </head>
+  <body>
+    <canvas id="render-canvas" aria-label="Escena 3D del bosque"></canvas>
+    <div class="vignette"></div>
+    <header class="topbar"><span class="brand">ARCHIVO 08 <i>/</i> BOSQUE NORTE</span><span id="objective">Revisa la cabaña y encuentra una pista.</span><button id="flashlight-button" class="active">LINTERNA: ON</button><button id="backpack-button">MOCHILA [M]</button><button id="save-button">GUARDAR [CTRL+A]</button></header>
+    <section class="vitals" aria-label="Estado de supervivencia">
+      <div><span>SALUD</span><i><b id="health-bar"></b></i></div><div><span>ENERGIA</span><i><b id="energy-bar"></b></i></div><div><span>HAMBRE</span><i><b id="hunger-bar"></b></i></div>
+    </section>
+    <p class="interaction" id="interaction">Haz clic para entrar al bosque</p>
+    <aside class="minimap" aria-label="Mapa del bosque"><span class="map-title">NORTE</span><div class="map-grid"><i class="map-marker cabin-marker">⌂</i><i class="map-marker car-marker">△</i><i class="player-marker" id="player-marker"></i></div><small>CABAÑA · VEHÍCULO</small></aside>
+    <aside class="inventory" id="inventory"><div class="inventory-title">MOCHILA <button id="close-backpack" aria-label="Cerrar mochila">×</button><small id="weight">0 / 12</small></div><div id="items" class="items"><p>Vacía</p></div><div class="journal" id="journal"><span>BITÁCORA</span><p>Daniel desapareció hace tres días.</p></div></aside>
+    <div class="toast" id="toast" role="status"></div>
+    <div class="crosshair" aria-hidden="true"></div>
+    <div class="mobile-controls" aria-label="Controles táctiles"><button data-move="forward">▲</button><button data-move="left">◀</button><button data-move="back">▼</button><button data-move="right">▶</button><button id="touch-interact">USAR</button></div>
+    <section class="note-modal" id="note-modal" hidden><article><p>DOCUMENTO ENCONTRADO</p><h2 id="note-title">Nota de Daniel</h2><div id="note-content"></div><button id="close-note">CERRAR [E]</button></article></section>
+    <section class="intro" id="intro"><p>CAPITULO I</p><h1>La cabaña de vigilancia</h1><span>La puerta estaba abierta. Dentro aún huele a humo.<br />Daniel estuvo aquí.</span><button id="start-button">ENTRAR A LA CABAÑA</button><small>WASD o flechas para caminar · Ratón para mirar · Espacio para linterna · E para interactuar</small></section>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
