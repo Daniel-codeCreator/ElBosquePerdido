@@ -27,9 +27,12 @@ Prototipo 3D de supervivencia y terror psicológico en primera persona, creado c
 ## Controles
 
 - `WASD` o flechas: mover al personaje.
+- `Shift`: correr.
+- `Espacio`: saltar.
+- `Ctrl`: agacharse.
 - Clic en el escenario: activar control de cámara con ratón.
 - `E`: recoger objetos, leer o cerrar una nota.
-- `Espacio` o `F`: encender y apagar la linterna.
+- `F`: encender y apagar la linterna.
 - `M`: abrir la mochila.
 - `Ctrl + A`: guardar la partida localmente.
 
