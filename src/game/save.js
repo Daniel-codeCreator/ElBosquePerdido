@@ -1,33 +1,35 @@
-const SAVE_KEY = "bosque-desaparecidos-save-v16";
+const CLAVE_GUARDADO = "bosque-desaparecidos-save-v16";
 
-export function loadGame() {
+// Recupera la partida almacenada o devuelve nulo si no es válida.
+export function cargarPartida() {
   try {
-    return JSON.parse(localStorage.getItem(SAVE_KEY)) || null;
+    return JSON.parse(localStorage.getItem(CLAVE_GUARDADO)) || null;
   } catch {
     return null;
   }
 }
 
-export function saveGame(state) {
+// Guarda los datos necesarios para restaurar la partida actual.
+export function guardarPartida(estado) {
   localStorage.setItem(
-    SAVE_KEY,
+    CLAVE_GUARDADO,
     JSON.stringify({
-      inventory: state.inventory,
-      journal: state.journal,
-      collected: state.collected,
-      readNotes: state.readNotes,
-      documents: state.documents,
-      health: state.health,
-      energy: state.energy,
-      hunger: state.hunger,
-      flashlight: state.flashlight,
-      battery: state.battery,
-      rifleAmmo: state.rifleAmmo,
-      chapter2: state.chapter2,
-      stationPowered: state.stationPowered,
-      chapter2Finished: state.chapter2Finished,
-      mission: state.mission,
-      settings: state.settings,
+      inventory: estado.inventory,
+      journal: estado.journal,
+      collected: estado.collected,
+      readNotes: estado.readNotes,
+      documents: estado.documents,
+      health: estado.health,
+      energy: estado.energy,
+      hunger: estado.hunger,
+      flashlight: estado.flashlight,
+      battery: estado.battery,
+      rifleAmmo: estado.rifleAmmo,
+      chapter2: estado.chapter2,
+      stationPowered: estado.stationPowered,
+      chapter2Finished: estado.chapter2Finished,
+      mission: estado.mission,
+      settings: estado.settings,
     }),
   );
 }

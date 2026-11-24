@@ -8,18 +8,24 @@ import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
-import { createPlayer, updatePlayer } from "./game/player.js";
-import { buildWorld, createPickup } from "./game/world.js";
 import {
-  addItem,
-  inventoryWeight,
-  renderInventory,
-  renderJournal,
+  crearJugador,
+  actualizarJugador,
+} from "./game/player.js";
+import { construirMundo, crearRecogible } from "./game/world.js";
+import {
+  agregarObjeto,
+  pesoInventario,
+  renderizarInventario,
+  renderizarBitacora,
 } from "./game/inventory.js";
-import { loadGame, saveGame } from "./game/save.js";
+import {
+  cargarPartida,
+  guardarPartida,
+} from "./game/save.js";
 
-const canvas = document.querySelector("#render-canvas");
-const engine = new Engine(canvas, true, { stencil: true });
+const lienzo = document.querySelector("#render-canvas");
+const motor = new Engine(lienzo, true, { stencil: true });
 const state = {
   inventory: {},
   journal: [
@@ -40,24 +46,25 @@ const state = {
   mission: { phase: "note-1" },
   settings: { quality: "high", flashlightMode: "wide" },
 };
-const stored = loadGame();
-if (stored) Object.assign(state, stored);
+const partidaGuardada = cargarPartida();
+if (partidaGuardada) Object.assign(state, partidaGuardada);
 state.rifleAmmo ??= 0;
 state.readNotes ??= [];
 state.mission ??= { phase: state.chapter2 ? "find-card" : "note-1" };
-let nearest = null;
-let noteOpen = false;
-let escaped = false;
-let nearExit = false;
-let creatureHealth = 3;
-let audioContext = null;
-let nextFootstep = 0;
-let lastShotAt = 0;
-let muzzleUntil = 0;
-let windGain = null;
-let waterGain = null;
-const pressedKeys = new Set();
-const touchInput = {
+let masCercano = null;
+let notaAbierta = false;
+let escapo = false;
+let cercaSalida = false;
+let saludCriatura = 3;
+let contextoAudio = null;
+let proximoPaso = 0;
+let ultimoDisparo = 0;
+let destelloHasta = 0;
+let gananciaViento = null;
+let gananciaAgua = null;
+let proximoSonidoRio = 0;
+const teclasPulsadas = new Set();
+const entradaTactil = {
   forward: 0,
   back: 0,
   left: 0,
@@ -67,88 +74,136 @@ const touchInput = {
   jump: false,
 };
 
-const scene = new Scene(engine);
-scene.clearColor = new Color4(0.055, 0.12, 0.09, 1);
-scene.fogMode = Scene.FOGMODE_EXP2;
-scene.fogDensity = 0.025;
-scene.fogColor = new Color3(0.055, 0.12, 0.08);
-new HemisphericLight("moon", new Vector3(0.2, 1, 0.1), scene).intensity = 0.55;
-const moon = new DirectionalLight(
+const escena = new Scene(motor);
+escena.clearColor = new Color4(0.045, 0.105, 0.12, 1);
+escena.fogMode = Scene.FOGMODE_EXP2;
+escena.fogDensity = 0.021;
+escena.fogColor = new Color3(0.045, 0.11, 0.11);
+const luzCielo = new HemisphericLight("moon", new Vector3(0.2, 1, 0.1), escena);
+luzCielo.diffuse = new Color3(0.28, 0.45, 0.5);
+luzCielo.groundColor = new Color3(0.025, 0.055, 0.045);
+luzCielo.intensity = 0.62;
+const luna = new DirectionalLight(
   "moonlight",
   new Vector3(-0.45, -1, 0.25),
-  scene,
+  escena,
 );
-moon.position = new Vector3(20, 35, -20);
-moon.intensity = 0.7;
-new GlowLayer("atmosphere", scene).intensity = 0.35;
-const player = createPlayer(scene, canvas);
-scene.activeCamera = player.camera;
-const flashlight = new SpotLight(
+luna.position = new Vector3(20, 35, -20);
+luna.diffuse = new Color3(0.5, 0.68, 0.72);
+luna.intensity = 0.82;
+new GlowLayer("atmosphere", escena).intensity = 0.35;
+const jugador = crearJugador(escena, lienzo);
+escena.activeCamera = jugador.camera;
+const linterna = new SpotLight(
   "flashlight",
   new Vector3(0, -0.1, 0),
   new Vector3(0, 0, 1),
   Math.PI / 2.5,
   1.35,
-  scene,
+  escena,
 );
-flashlight.intensity = 8;
-flashlight.range = 30;
-flashlight.diffuse = new Color3(1, 0.94, 0.76);
-const flashlightGlow = new PointLight(
+linterna.intensity = 8;
+linterna.range = 30;
+linterna.diffuse = new Color3(1, 0.94, 0.76);
+const brilloLinterna = new PointLight(
   "flashlight glow",
   new Vector3(0, 0, 0.2),
-  scene,
+  escena,
 );
-flashlightGlow.diffuse = new Color3(1, 0.82, 0.56);
-flashlightGlow.range = 7;
-flashlightGlow.intensity = 0.55;
-flashlight.intensity = state.flashlight && state.battery > 0 ? 8 : 0;
-flashlightGlow.intensity = state.flashlight && state.battery > 0 ? 0.55 : 0;
-const muzzleFlash = new PointLight("rifle muzzle flash", new Vector3(), scene);
-muzzleFlash.diffuse = new Color3(1, 0.72, 0.28);
-muzzleFlash.intensity = 7;
-muzzleFlash.range = 8;
-muzzleFlash.setEnabled(false);
-const world = buildWorld(scene, state.settings?.quality || "high");
-world.pickups
-  .filter((pickup) => pickup.metadata.chapter === 2)
-  .forEach((pickup) => pickup.setEnabled(Boolean(state.chapter2)));
+brilloLinterna.diffuse = new Color3(1, 0.82, 0.56);
+brilloLinterna.range = 7;
+brilloLinterna.intensity = 0.55;
+linterna.intensity = state.flashlight && state.battery > 0 ? 8 : 0;
+brilloLinterna.intensity = state.flashlight && state.battery > 0 ? 0.55 : 0;
+const destelloBoca = new PointLight("rifle muzzle flash", new Vector3(), escena);
+destelloBoca.diffuse = new Color3(1, 0.72, 0.28);
+destelloBoca.intensity = 7;
+destelloBoca.range = 8;
+destelloBoca.setEnabled(false);
+const mundo = construirMundo(escena, state.settings?.quality || "high");
+mundo.pickups
+  .filter((recogible) => recogible.metadata.chapter === 2)
+  .forEach((recogible) => recogible.setEnabled(Boolean(state.chapter2)));
 if (state.chapter2 && !state.chapter2Finished)
-  player.camera.position.set(
-    world.stationPoint.x,
-    world.stationPoint.y + 1.7,
-    world.stationPoint.z + 7,
+  jugador.camera.position.set(
+    mundo.stationPoint.x,
+    mundo.stationPoint.y + 1.7,
+    mundo.stationPoint.z + 7,
   );
-const { creature, escapePoint } = world;
-const interactables = world.pickups.filter(
-  (mesh) => !state.collected.includes(mesh.metadata.id),
+const { creature: criatura, escapePoint: puntoEscape } = mundo;
+const interactuables = mundo.pickups.filter(
+  (malla) => !state.collected.includes(malla.metadata.id),
 );
-world.pickups
-  .filter((mesh) => state.collected.includes(mesh.metadata.id))
-  .forEach((mesh) => mesh.dispose());
+mundo.pickups
+  .filter((malla) => state.collected.includes(malla.metadata.id))
+  .forEach((malla) => malla.dispose());
 
-function toast(text) {
-  const el = document.querySelector("#toast");
-  el.textContent = text;
-  el.classList.add("show");
-  setTimeout(() => el.classList.remove("show"), 3600);
+// Muestra un aviso temporal en pantalla.
+function mostrarAviso(texto) {
+  const elemento = document.querySelector("#toast");
+  elemento.textContent = texto;
+  elemento.classList.add("show");
+  setTimeout(() => elemento.classList.remove("show"), 3600);
 }
-function updateVitals() {
+const narrativaIntroduccion = "Daniel Ortega desapareció hace tres días mientras investigaba los apagones de la estación de bombeo. Su última transmisión señaló esta cabaña. Encuentra sus pistas, activa la radio del norte y no sigas ninguna voz que salga del río.";
+let caracterIntroduccion = 0;
+let temporizadorEscrituraIntroduccion = null;
+// Escribe gradualmente el texto narrativo de introducción.
+function iniciarMaquinaEscribirIntro() {
+  const historia = document.querySelector("#intro-story");
+  historia.textContent = "";
+  caracterIntroduccion = 0;
+  clearInterval(temporizadorEscrituraIntroduccion);
+  temporizadorEscrituraIntroduccion = setInterval(() => {
+    historia.textContent += narrativaIntroduccion[caracterIntroduccion++] || "";
+    if (caracterIntroduccion >= narrativaIntroduccion.length) {
+      clearInterval(temporizadorEscrituraIntroduccion);
+      document.querySelector("#briefing-continue").hidden = false;
+    }
+  }, 18);
+}
+// Inicia el briefing narrado antes de entrar al bosque.
+function iniciarBriefing() {
+  activarAudio();
+  const introduccion = document.querySelector("#intro");
+  introduccion.classList.add("briefing");
+  document.querySelector("#start-button").hidden = true;
+  iniciarMaquinaEscribirIntro();
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+    const voz = new SpeechSynthesisUtterance(narrativaIntroduccion);
+    voz.lang = "es-ES";
+    voz.rate = 0.92;
+    voz.pitch = 0.86;
+    window.speechSynthesis.speak(voz);
+  }
+}
+// Cierra la introducción y activa el juego.
+function entrarBosque() {
+  clearInterval(temporizadorEscrituraIntroduccion);
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  activarAudio();
+  document.querySelector("#intro").classList.add("hidden");
+}
+// Actualiza las barras de salud, energía y hambre.
+function actualizarSignosVitales() {
   ["health", "energy", "hunger"].forEach(
     (key) =>
       (document.querySelector(`#${key}-bar`).style.width = `${state[key]}%`),
   );
 }
-function noteCount() {
+// Devuelve cuántas notas ha leído el jugador.
+function cantidadNotas() {
   return state.readNotes.length;
 }
-function updateObjective() {
-  const objectives = {
+// Actualiza el texto de la misión según el progreso.
+function actualizarObjetivo() {
+  const objetivos = {
     "note-1": "Misión 1: lee la nota sobre la mesa de la cabaña.",
     "note-2": "Misión 2: revisa el vehículo frente a la cabaña.",
     "note-4": "Misión 3: llega a la casa junto al río y lee la nota de Daniel.",
     "radio-fuse":
-      "Misión 4: busca el fusible de radio en el refugio del cazador.",
+      "Misión 4: sigue la estrella azul hasta el refugio del cazador y busca el fusible.",
     radio: "Misión 5: lleva el fusible a la radio de emergencia al norte.",
     "find-card": "Misión 1: encuentra la tarjeta de seguridad de la estación.",
     "industrial-fuses": `Misión 2: reúne fusibles industriales (${Math.min(state.inventory.industrialFuse || 0, 3)}/3).`,
@@ -157,59 +212,64 @@ function updateObjective() {
     complete: "Capítulo II completado: Daniel está a salvo.",
   };
   document.querySelector("#objective").textContent =
-    objectives[state.mission.phase] ||
+    objetivos[state.mission.phase] ||
     "Explora el bosque y sigue las pistas de Daniel.";
 }
-function updateBattery() {
+// Muestra el porcentaje actual de batería.
+function actualizarBateria() {
   document.querySelector("#battery-value").textContent =
     `${Math.ceil(state.battery)}%`;
 }
-function updateRifleHud() {
-  const hasRifle = Boolean(state.inventory.rifle);
-  document.querySelector("#ammo-hud").hidden = !hasRifle;
+// Actualiza la munición visible del rifle.
+function actualizarIndicadorRifle() {
+  const tieneRifle = Boolean(state.inventory.rifle);
+  document.querySelector("#ammo-hud").hidden = !tieneRifle;
   document.querySelector("#rifle-ammo").textContent = `${state.rifleAmmo} / 3`;
   document.querySelector("#ammo-reserve").textContent =
     `${state.inventory.ammo || 0} RESERVA`;
 }
-function updateNearby() {
-  nearExit =
+// Busca el objeto interactuable más cercano al jugador.
+function actualizarCercano() {
+  cercaSalida =
     !state.chapter2 &&
     state.mission.phase === "radio" &&
-    Vector3.Distance(player.camera.position, escapePoint) < 4.5;
-  nearest = null;
-  let distance = 3.2;
-  const forward = player.camera.getDirection(Vector3.Forward());
-  interactables.forEach((mesh) => {
-    if (!mesh.isDisposed() && mesh.isEnabled()) {
-      const offset = mesh.position.subtract(player.camera.position);
-      const current = offset.length();
+    Vector3.Distance(jugador.camera.position, puntoEscape) < 4.5;
+  masCercano = null;
+  let distancia = 3.2;
+  const adelante = jugador.camera.getDirection(Vector3.Forward());
+  interactuables.forEach((malla) => {
+    if (!malla.isDisposed() && malla.isEnabled()) {
+      const desplazamiento = malla.position.subtract(jugador.camera.position);
+      const actual = desplazamiento.length();
       if (
-        current < distance &&
-        Vector3.Dot(forward, offset.normalize()) > 0.25
+        actual < distancia &&
+        Vector3.Dot(adelante, desplazamiento.normalize()) > 0.25
       ) {
-        nearest = mesh;
-        distance = current;
+        masCercano = malla;
+        distancia = actual;
       }
     }
   });
-  const prompt = document.querySelector("#interaction");
-  prompt.textContent = nearExit
+  const aviso = document.querySelector("#interaction");
+  aviso.textContent = cercaSalida
     ? "[E] ACTIVAR RADIO DE EMERGENCIA"
-    : nearest
-      ? `[E] ${nearest.metadata.label}`
+    : masCercano
+      ? `[E] ${masCercano.metadata.label}`
       : "";
-  prompt.classList.toggle("show", nearExit || Boolean(nearest));
+  aviso.classList.toggle("show", cercaSalida || Boolean(masCercano));
 }
-function dropPosition() {
-  const forward = player.camera.getDirection(Vector3.Forward());
-  forward.y = 0;
-  forward.normalize();
-  return player.camera.position.add(forward.scale(1.25));
+// Calcula el punto frente al jugador para soltar objetos.
+function posicionSoltar() {
+  const adelante = jugador.camera.getDirection(Vector3.Forward());
+  adelante.y = 0;
+  adelante.normalize();
+  return jugador.camera.position.add(adelante.scale(1.25));
 }
-function dropItem(type, label, noteText = "") {
-  const id = `dropped-${type}-${Date.now()}`;
-  const position = dropPosition();
-  const offset =
+// Crea en el suelo un objeto descartado por el jugador.
+function soltarObjeto(tipo, etiqueta, textoNota = "") {
+  const id = `dropped-${tipo}-${Date.now()}`;
+  const posicion = posicionSoltar();
+  const desplazamiento =
     {
       note: 0.05,
       wood: 0.16,
@@ -217,635 +277,639 @@ function dropItem(type, label, noteText = "") {
       knife: 0.1,
       rifle: 0.12,
       ammo: 0.15,
-    }[type] || 0.24;
-  position.y = world.terrainHeight(position.x, position.z) + offset;
-  const pickup = createPickup(
-    scene,
+    }[tipo] || 0.24;
+  posicion.y = mundo.alturaTerreno(posicion.x, posicion.z) + desplazamiento;
+  const recogible = crearRecogible(
+    escena,
     id,
-    type,
-    position,
-    label,
+    tipo,
+    posicion,
+    etiqueta,
     "Recuperaste el objeto descartado.",
-    noteText,
+    textoNota,
   );
-  interactables.push(pickup);
+  interactuables.push(recogible);
 }
-function showNote(text, title = "Nota de Daniel") {
-  noteOpen = true;
-  document.querySelector("#note-title").textContent = title;
-  document.querySelector("#note-content").innerHTML = text
+// Abre el lector de notas con un título y contenido.
+function mostrarNota(texto, titulo = "Nota de Daniel") {
+  notaAbierta = true;
+  document.querySelector("#note-title").textContent = titulo;
+  document.querySelector("#note-content").innerHTML = texto
     .split("\n\n")
-    .map((paragraph) => `<p>${paragraph}</p>`)
+    .map((parrafo) => `<p>${parrafo}</p>`)
     .join("");
   document.querySelector("#note-modal").hidden = false;
 }
-function closeNote() {
-  noteOpen = false;
+// Cierra el lector de notas activo.
+function cerrarNota() {
+  notaAbierta = false;
   document.querySelector("#note-modal").hidden = true;
 }
-function setFlashlight(enabled) {
-  state.flashlight = Boolean(enabled && state.battery > 0);
-  const longRange = state.settings.flashlightMode === "long";
-  flashlight.intensity = state.flashlight ? (longRange ? 12 : 8) : 0;
-  flashlightGlow.intensity = state.flashlight ? (longRange ? 0.22 : 0.55) : 0;
+// Enciende o apaga la linterna según la batería disponible.
+function configurarLinterna(activa) {
+  const estabaActiva = state.flashlight;
+  state.flashlight = Boolean(activa && state.battery > 0);
+  const alcanceLargo = state.settings.flashlightMode === "long";
+  linterna.intensity = state.flashlight ? (alcanceLargo ? 12 : 8) : 0;
+  brilloLinterna.intensity = state.flashlight ? (alcanceLargo ? 0.22 : 0.55) : 0;
   document
     .querySelector("#flashlight-button")
     .classList.toggle("active", state.flashlight);
+  if (estabaActiva !== state.flashlight) reproducirSonidoLinterna(state.flashlight);
 }
-function toggleFlashlight() {
-  if (state.flashlight) return setFlashlight(false);
-  if (state.battery <= 0) return toast("La linterna no tiene batería.");
-  setFlashlight(true);
+// Alterna el estado de la linterna.
+function alternarLinterna() {
+  if (state.flashlight) return configurarLinterna(false);
+  if (state.battery <= 0) return mostrarAviso("La linterna no tiene batería.");
+  configurarLinterna(true);
 }
-function toggleFlashlightMode() {
+// Alterna entre los haces cercano y lejano de la linterna.
+function alternarModoLinterna() {
   state.settings.flashlightMode =
     state.settings.flashlightMode === "wide" ? "long" : "wide";
   document.querySelector("#flashlight-mode").textContent =
     state.settings.flashlightMode === "wide" ? "CERCA" : "LEJOS";
-  toast(
+  mostrarAviso(
     state.settings.flashlightMode === "wide"
       ? "Haz amplio activado."
       : "Haz de largo alcance activado.",
   );
-  saveGame(state);
+  guardarPartida(state);
 }
-function updateFlashlight() {
-  const enabled = state.flashlight && state.battery > 0;
-  const longRange = state.settings.flashlightMode === "long";
-  flashlight.angle = longRange ? Math.PI / 10 : Math.PI / 2.5;
-  flashlight.range = longRange ? 78 : 30;
-  flashlight.intensity = enabled ? (longRange ? 12 : 8) : 0;
-  flashlightGlow.intensity = enabled ? (longRange ? 0.22 : 0.55) : 0;
-  const forward = player.camera.getDirection(Vector3.Forward());
-  flashlight.position.copyFrom(player.camera.position.add(forward.scale(0.18)));
-  flashlight.direction.copyFrom(forward);
-  flashlightGlow.position.copyFrom(
-    player.camera.position.add(forward.scale(0.12)),
+// Alinea las luces de la linterna con la cámara.
+function actualizarLinterna() {
+  const activa = state.flashlight && state.battery > 0;
+  const alcanceLargo = state.settings.flashlightMode === "long";
+  linterna.angle = alcanceLargo ? Math.PI / 10 : Math.PI / 2.5;
+  linterna.range = alcanceLargo ? 78 : 30;
+  linterna.intensity = activa ? (alcanceLargo ? 12 : 8) : 0;
+  brilloLinterna.intensity = activa ? (alcanceLargo ? 0.22 : 0.55) : 0;
+  const adelante = jugador.camera.getDirection(Vector3.Forward());
+  linterna.position.copyFrom(jugador.camera.position.add(adelante.scale(0.18)));
+  linterna.direction.copyFrom(adelante);
+  brilloLinterna.position.copyFrom(
+    jugador.camera.position.add(adelante.scale(0.12)),
   );
-  muzzleFlash.position.copyFrom(
-    player.camera.position.add(forward.scale(0.55)),
+  destelloBoca.position.copyFrom(
+    jugador.camera.position.add(adelante.scale(0.55)),
   );
-  muzzleFlash.setEnabled(performance.now() < muzzleUntil);
+  destelloBoca.setEnabled(performance.now() < destelloHasta);
 }
-function toggleQuality() {
+// Alterna la calidad visual y reinicia la escena.
+function alternarCalidad() {
   state.settings.quality = state.settings.quality === "high" ? "low" : "high";
-  engine.setHardwareScalingLevel(state.settings.quality === "high" ? 1 : 1.5);
+  motor.setHardwareScalingLevel(state.settings.quality === "high" ? 1 : 1.5);
   document.querySelector("#quality-button").textContent =
     `CALIDAD: ${state.settings.quality === "high" ? "ALTA" : "BAJA"}`;
-  toast("Calidad gráfica actualizada.");
+  mostrarAviso("Calidad gráfica actualizada.");
 }
-function openBackpack() {
+// Abre la interfaz de inventario.
+function abrirMochila() {
   document.querySelector("#inventory").classList.add("open");
 }
-function showBatteryPrompt() {
+// Pregunta si se desea reemplazar una batería agotada.
+function mostrarAvisoBateria() {
   const modal = document.querySelector("#battery-modal");
-  const amount = state.inventory.battery || 0;
-  document.querySelector("#battery-question").textContent = amount
-    ? `Tienes ${amount} batería${amount === 1 ? "" : "s"} en la mochila.`
+  const cantidad = state.inventory.battery || 0;
+  document.querySelector("#battery-question").textContent = cantidad
+    ? `Tienes ${cantidad} batería${cantidad === 1 ? "" : "s"} en la mochila.`
     : "No tienes baterías en la mochila.";
-  document.querySelector("#replace-battery").disabled = !amount;
+  document.querySelector("#replace-battery").disabled = !cantidad;
   modal.hidden = false;
 }
-function replaceBattery() {
+// Consume una batería del inventario y recarga la linterna.
+function reemplazarBateria() {
   if (!state.inventory.battery) return;
   state.inventory.battery--;
   if (!state.inventory.battery) delete state.inventory.battery;
   state.battery = 100;
-  setFlashlight(true);
+  configurarLinterna(true);
   document.querySelector("#battery-modal").hidden = true;
-  renderInventory(state);
-  saveCurrentGame();
-  toast("Instalaste una batería nueva.");
+  renderizarInventario(state);
+  guardarPartidaActual();
+  mostrarAviso("Instalaste una batería nueva.");
 }
-function closeBackpack() {
+// Cierra la interfaz de inventario.
+function cerrarMochila() {
   document.querySelector("#inventory").classList.remove("open");
 }
-function saveCurrentGame() {
-  saveGame(state);
-  toast("Partida guardada en este dispositivo.");
+// Guarda el progreso actual de forma manual.
+function guardarPartidaActual() {
+  guardarPartida(state);
+  mostrarAviso("Partida guardada en este dispositivo.");
 }
-function updateMinimap() {
-  const clamp = (value) => Math.max(8, Math.min(92, value));
-  const left = `${clamp(50 + player.camera.position.x * 0.19)}%`;
-  const top = `${clamp(50 + player.camera.position.z * 0.19)}%`;
+// Actualiza la posición del jugador y del objetivo en los mapas.
+function actualizarMinimapa() {
+  const limitar = (valor) => Math.max(8, Math.min(92, valor));
+  const izquierda = `${limitar(50 + jugador.camera.position.x * 0.19)}%`;
+  const arriba = `${limitar(50 + jugador.camera.position.z * 0.19)}%`;
   ["#player-marker", "#world-player-marker"].forEach((selector) => {
-    const marker = document.querySelector(selector);
-    marker.style.left = left;
-    marker.style.top = top;
+    const marcador = document.querySelector(selector);
+    marcador.style.left = izquierda;
+    marcador.style.top = arriba;
+  });
+  const objetivos = {
+    "note-1": new Vector3(1.6, 0, -0.4),
+    "note-2": new Vector3(-1.3, 0, -12),
+    "note-4": new Vector3(29, 0, -132),
+    "radio-fuse": new Vector3(89, 0, -165),
+    radio: new Vector3(0, 0, -210),
+    "find-card": new Vector3(137, 0, -204),
+    "industrial-fuses": new Vector3(140, 0, -197),
+    generator: new Vector3(150, 0, -210),
+    daniel: new Vector3(150, 0, -218),
+  };
+  const objetivo = objetivos[state.mission.phase];
+  ["#objective-marker", "#world-objective-marker"].forEach((selector) => {
+    const marcador = document.querySelector(selector);
+    marcador.hidden = !objetivo;
+    if (objetivo) {
+      marcador.style.left = `${limitar(50 + objetivo.x * 0.19)}%`;
+      marcador.style.top = `${limitar(50 + objetivo.z * 0.19)}%`;
+    }
   });
 }
-function interact() {
-  if (noteOpen) return;
-  if (nearExit) {
-    if (!state.inventory.fuse) return toast("La radio necesita un fusible.");
-    state.inventory.fuse--;
-    if (!state.inventory.fuse) delete state.inventory.fuse;
-    escaped = true;
-    renderInventory(state);
-    saveGame(state);
-    document.querySelector("#ending-modal").hidden = false;
-    document.querySelector("#objective").textContent =
-      "La radio de emergencia está transmitiendo.";
-    return;
-  }
-  if (!nearest || (nearest.metadata.chapter === 2 && !state.chapter2)) return;
-  const { id, type, label, message, noteText } = nearest.metadata;
-  if (type === "generator") {
-    if ((state.inventory.fuse || 0) < 3)
-      return toast("El panel necesita tres fusibles industriales.");
-    state.inventory.fuse -= 3;
-    if (!state.inventory.fuse) delete state.inventory.fuse;
-    state.stationPowered = true;
-    state.collected.push(id);
-    nearest.dispose();
-    nearest = null;
-    updateObjective();
-    renderInventory(state);
-    saveGame(state);
-    return toast(message);
-  }
-  if (type === "daniel") {
-    if (!state.stationPowered)
-      return toast("El refugio sigue bloqueado. Restablece la energía.");
-    state.collected.push(id);
-    nearest.dispose();
-    nearest = null;
-    state.journal.push(
-      "Daniel sobrevivió bajo la estación. Juntos abrieron la compuerta hacia la salida.",
-    );
-    renderJournal(state);
-    saveGame(state);
-    return toast(message);
-  }
-  if (type === "note") {
-    if (!state.readNotes.includes(id)) {
-      state.readNotes.push(id);
-      state.journal.push("Leíste una nota de Daniel.");
-      updateObjective();
-      renderJournal(state);
-      saveGame(state);
-    }
-    return showNote(noteText, label);
-  }
-  if (type === "berries") {
-    state.hunger = Math.min(100, state.hunger + 28);
-    state.collected.push(id);
-    nearest.dispose();
-    nearest = null;
-    updateVitals();
-    saveGame(state);
-    return toast("Comiste frutas silvestres. Recuperaste saciedad.");
-  }
-  if (type === "battery" && state.battery <= 0) {
-    state.battery = 100;
-    setFlashlight(true);
-    state.collected.push(id);
-    nearest.dispose();
-    nearest = null;
-    document.querySelector("#battery-modal").hidden = true;
-    saveGame(state);
-    updateBattery();
-    return toast("Instalaste la batería y encendiste la linterna.");
-  }
-  const amount = type === "ammo" ? (state.inventory.ammo ? 0 : 1) : 1;
-  if (inventoryWeight(state) + amount > 12)
-    return toast("La mochila está llena. No puedes cargar más objetos.");
-  if (type === "rifle") {
-    addItem(state, "rifle");
-    state.rifleAmmo = 3;
-  } else addItem(state, type, type === "ammo" ? 3 : 1);
-  state.collected.push(id);
-  nearest.dispose();
-  nearest = null;
-  renderInventory(state);
-  renderJournal(state);
-  updateRifleHud();
-  saveGame(state);
-  toast(
-    type === "rifle" ? "Encontraste el rifle con 3 balas cargadas." : message,
-  );
-}
-function interactMission() {
-  if (noteOpen) return;
-  if (nearExit) {
+// Gestiona la progresión de misiones y los objetos recogibles.
+function interactuar() {
+  if (notaAbierta) return;
+  if (cercaSalida) {
     if (!state.inventory.radioFuse)
-      return toast("La radio necesita el fusible de radio.");
+      return mostrarAviso("La radio necesita el fusible de radio.");
     state.inventory.radioFuse--;
     if (!state.inventory.radioFuse) delete state.inventory.radioFuse;
     state.chapter2 = true;
     state.mission.phase = "find-card";
-    escaped = true;
-    renderInventory(state);
-    saveGame(state);
+    escapo = true;
+    renderizarInventario(state);
+    guardarPartida(state);
     document.querySelector("#ending-modal").hidden = false;
     document.querySelector("#objective").textContent =
       "La radio de emergencia está transmitiendo.";
     return;
   }
-  if (!nearest || (nearest.metadata.chapter === 2 && !state.chapter2)) return;
-  const { id, type, label, message, noteText } = nearest.metadata;
-  if (type === "radioFuse" && state.mission.phase !== "radio-fuse")
-    return toast("Sigue las pistas de Daniel antes de buscar el fusible.");
-  if (type === "card" && state.mission.phase !== "find-card")
-    return toast("La estación aún no forma parte de tu misión.");
+  if (!masCercano || (masCercano.metadata.chapter === 2 && !state.chapter2)) return;
+  const {
+    id,
+    type: tipo,
+    label: etiqueta,
+    message: mensaje,
+    noteText: textoNota,
+  } = masCercano.metadata;
+  if (tipo === "radioFuse" && state.mission.phase !== "radio-fuse")
+    return mostrarAviso("Sigue las pistas de Daniel antes de buscar el fusible.");
+  if (tipo === "card" && state.mission.phase !== "find-card")
+    return mostrarAviso("La estación aún no forma parte de tu misión.");
   if (
-    type === "industrialFuse" &&
+    tipo === "industrialFuse" &&
     !["industrial-fuses", "generator"].includes(state.mission.phase)
   )
-    return toast("Primero encuentra la tarjeta de seguridad.");
-  if (type === "generator") {
+    return mostrarAviso("Primero encuentra la tarjeta de seguridad.");
+  if (tipo === "generator") {
     if (!state.inventory.card)
-      return toast("El panel requiere la tarjeta de seguridad.");
+      return mostrarAviso("El panel requiere la tarjeta de seguridad.");
     if ((state.inventory.industrialFuse || 0) < 3)
-      return toast("El panel necesita tres fusibles industriales.");
+      return mostrarAviso("El panel necesita tres fusibles industriales.");
     state.inventory.industrialFuse -= 3;
     if (!state.inventory.industrialFuse) delete state.inventory.industrialFuse;
     state.stationPowered = true;
     state.mission.phase = "daniel";
     state.collected.push(id);
-    nearest.dispose();
-    nearest = null;
-    updateObjective();
-    renderInventory(state);
-    saveGame(state);
-    return toast(message);
+    masCercano.dispose();
+    masCercano = null;
+    actualizarObjetivo();
+    renderizarInventario(state);
+    guardarPartida(state);
+    return mostrarAviso(mensaje);
   }
-  if (type === "daniel") {
+  if (tipo === "daniel") {
     if (!state.stationPowered)
-      return toast("El refugio sigue bloqueado. Restablece la energía.");
+      return mostrarAviso("El refugio sigue bloqueado. Restablece la energía.");
     state.collected.push(id);
-    nearest.dispose();
-    nearest = null;
+    masCercano.dispose();
+    masCercano = null;
     state.chapter2Finished = true;
     state.mission.phase = "complete";
     state.journal.push(
       "Daniel sobrevivió bajo la estación. Juntos abrieron la compuerta hacia la salida.",
     );
-    renderJournal(state);
-    updateObjective();
-    saveGame(state);
+    renderizarBitacora(state);
+    actualizarObjetivo();
+    guardarPartida(state);
     document.querySelector("#ending-content").innerHTML =
       "<p>Daniel está a salvo. La estación vuelve a tener energía y la salida está abierta.</p>";
     document.querySelector("#next-chapter").hidden = true;
     document.querySelector("#ending-modal").hidden = false;
-    return toast(message);
+    return mostrarAviso(mensaje);
   }
-  if (type === "note") {
-    const order = ["note-1", "note-2", "note-4"];
+  if (tipo === "note") {
+    const orden = ["note-1", "note-2", "note-4"];
     if (!state.readNotes.includes(id)) {
       state.readNotes.push(id);
       if (id === state.mission.phase) {
-        state.mission.phase = order[order.indexOf(id) + 1] || "radio-fuse";
+        state.mission.phase = orden[orden.indexOf(id) + 1] || "radio-fuse";
         state.journal.push("La pista confirma tu siguiente destino.");
-        updateObjective();
-        renderJournal(state);
-        saveGame(state);
-      } else toast("Esta nota aporta contexto, pero sigue la misión indicada.");
+        actualizarObjetivo();
+        renderizarBitacora(state);
+        guardarPartida(state);
+      } else mostrarAviso("Esta nota aporta contexto, pero sigue la misión indicada.");
     }
-    return showNote(noteText, label);
+    return mostrarNota(textoNota, etiqueta);
   }
-  if (type === "berries") {
+  if (tipo === "berries") {
     state.hunger = Math.min(100, state.hunger + 28);
     state.collected.push(id);
-    nearest.dispose();
-    nearest = null;
-    updateVitals();
-    saveGame(state);
-    return toast("Comiste frutas silvestres. Recuperaste saciedad.");
+    masCercano.dispose();
+    masCercano = null;
+    actualizarSignosVitales();
+    guardarPartida(state);
+    return mostrarAviso("Comiste frutas silvestres. Recuperaste saciedad.");
   }
-  if (type === "battery" && state.battery <= 0) {
+  if (tipo === "battery" && state.battery <= 0) {
     state.battery = 100;
-    setFlashlight(true);
+    configurarLinterna(true);
     state.collected.push(id);
-    nearest.dispose();
-    nearest = null;
+    masCercano.dispose();
+    masCercano = null;
     document.querySelector("#battery-modal").hidden = true;
-    saveGame(state);
-    updateBattery();
-    return toast("Instalaste la batería y encendiste la linterna.");
+    guardarPartida(state);
+    actualizarBateria();
+    return mostrarAviso("Instalaste la batería y encendiste la linterna.");
   }
-  const amount = type === "ammo" ? (state.inventory.ammo ? 0 : 1) : 1;
-  if (inventoryWeight(state) + amount > 12)
-    return toast("La mochila está llena. No puedes cargar más objetos.");
-  if (type === "rifle") {
-    addItem(state, "rifle");
+  const cantidad = tipo === "ammo" ? (state.inventory.ammo ? 0 : 1) : 1;
+  if (pesoInventario(state) + cantidad > 12)
+    return mostrarAviso("La mochila está llena. No puedes cargar más objetos.");
+  if (tipo === "rifle") {
+    agregarObjeto(state, "rifle");
     state.rifleAmmo = 3;
-  } else addItem(state, type, type === "ammo" ? 3 : 1);
-  if (type === "radioFuse") state.mission.phase = "radio";
-  if (type === "card") state.mission.phase = "industrial-fuses";
-  if (type === "industrialFuse" && (state.inventory.industrialFuse || 0) >= 3)
+  } else agregarObjeto(state, tipo, tipo === "ammo" ? 3 : 1);
+  if (tipo === "radioFuse") state.mission.phase = "radio";
+  if (tipo === "card") state.mission.phase = "industrial-fuses";
+  if (tipo === "industrialFuse" && (state.inventory.industrialFuse || 0) >= 3)
     state.mission.phase = "generator";
   state.collected.push(id);
-  nearest.dispose();
-  nearest = null;
-  updateObjective();
-  renderInventory(state);
-  renderJournal(state);
-  updateRifleHud();
-  saveGame(state);
-  toast(
-    type === "rifle" ? "Encontraste el rifle con 3 balas cargadas." : message,
+  masCercano.dispose();
+  masCercano = null;
+  actualizarObjetivo();
+  renderizarInventario(state);
+  renderizarBitacora(state);
+  actualizarIndicadorRifle();
+  guardarPartida(state);
+  mostrarAviso(
+    tipo === "rifle" ? "Encontraste el rifle con 3 balas cargadas." : mensaje,
   );
 }
-function discardItem(type) {
-  if (!state.inventory[type]) return;
-  const label =
-    type === "wood"
+// Elimina un objeto del inventario y lo deja en el suelo.
+function descartarObjeto(tipo) {
+  if (!state.inventory[tipo]) return;
+  const etiqueta =
+    tipo === "wood"
       ? "Ramas secas"
-      : type === "berries"
+      : tipo === "berries"
         ? "Bayas oscuras"
         : "Batería de linterna";
-  state.inventory[type]--;
-  if (!state.inventory[type]) delete state.inventory[type];
-  dropItem(type, label);
-  renderInventory(state);
-  saveGame(state);
-  toast("El objeto quedó en el suelo junto a ti.");
+  state.inventory[tipo]--;
+  if (!state.inventory[tipo]) delete state.inventory[tipo];
+  soltarObjeto(tipo, etiqueta);
+  renderizarInventario(state);
+  guardarPartida(state);
+  mostrarAviso("El objeto quedó en el suelo junto a ti.");
 }
-function discardNote(id) {
-  const index = state.documents.findIndex((document) => document.id === id);
-  if (index < 0) return;
-  const [document] = state.documents.splice(index, 1);
+// Descarta una nota guardada y la devuelve al mundo.
+function descartarNota(id) {
+  const indice = state.documents.findIndex((documento) => documento.id === id);
+  if (indice < 0) return;
+  const [documento] = state.documents.splice(indice, 1);
   state.inventory.note--;
   if (!state.inventory.note) delete state.inventory.note;
-  dropItem("note", document.title, document.text);
-  renderInventory(state);
-  saveGame(state);
-  toast("La nota quedó en el suelo junto a ti.");
+  soltarObjeto("note", documento.title, documento.text);
+  renderizarInventario(state);
+  guardarPartida(state);
+  mostrarAviso("La nota quedó en el suelo junto a ti.");
 }
-function inputState() {
+// Convierte teclado y controles táctiles en movimiento del jugador.
+function estadoEntrada() {
   return {
     forward:
-      touchInput.forward ||
-      pressedKeys.has("KeyW") ||
-      pressedKeys.has("ArrowUp"),
+      entradaTactil.forward ||
+      teclasPulsadas.has("KeyW") ||
+      teclasPulsadas.has("ArrowUp"),
     back:
-      touchInput.back ||
-      pressedKeys.has("KeyS") ||
-      pressedKeys.has("ArrowDown"),
+      entradaTactil.back ||
+      teclasPulsadas.has("KeyS") ||
+      teclasPulsadas.has("ArrowDown"),
     left:
-      touchInput.left ||
-      pressedKeys.has("KeyA") ||
-      pressedKeys.has("ArrowLeft"),
+      entradaTactil.left ||
+      teclasPulsadas.has("KeyA") ||
+      teclasPulsadas.has("ArrowLeft"),
     right:
-      touchInput.right ||
-      pressedKeys.has("KeyD") ||
-      pressedKeys.has("ArrowRight"),
+      entradaTactil.right ||
+      teclasPulsadas.has("KeyD") ||
+      teclasPulsadas.has("ArrowRight"),
     run:
       state.energy > 0 &&
-      (touchInput.run ||
-        pressedKeys.has("ShiftLeft") ||
-        pressedKeys.has("ShiftRight")),
+      (entradaTactil.run ||
+        teclasPulsadas.has("ShiftLeft") ||
+        teclasPulsadas.has("ShiftRight")),
     crouch:
-      touchInput.crouch ||
-      pressedKeys.has("ControlLeft") ||
-      pressedKeys.has("ControlRight"),
-    jump: touchInput.jump || pressedKeys.has("Space"),
+      entradaTactil.crouch ||
+      teclasPulsadas.has("ControlLeft") ||
+      teclasPulsadas.has("ControlRight"),
+    jump: entradaTactil.jump || teclasPulsadas.has("Space"),
   };
 }
-function enableAudio() {
+// Inicializa el contexto y las fuentes de audio ambiental.
+function activarAudio() {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   if (!AudioContext) return;
-  audioContext ||= new AudioContext();
-  audioContext.resume();
-  if (!windGain) {
-    const wind = audioContext.createOscillator();
-    windGain = audioContext.createGain();
-    wind.type = "sine";
-    wind.frequency.value = 47;
-    windGain.gain.value = 0.008;
-    wind.connect(windGain).connect(audioContext.destination);
-    wind.start();
-    const water = audioContext.createOscillator();
-    waterGain = audioContext.createGain();
-    water.type = "triangle";
-    water.frequency.value = 92;
-    waterGain.gain.value = 0;
-    water.connect(waterGain).connect(audioContext.destination);
-    water.start();
+  contextoAudio ||= new AudioContext();
+  contextoAudio.resume();
+  if (!gananciaViento) {
+    const viento = contextoAudio.createOscillator();
+    gananciaViento = contextoAudio.createGain();
+    viento.type = "sine";
+    viento.frequency.value = 47;
+    gananciaViento.gain.value = 0.008;
+    viento.connect(gananciaViento).connect(contextoAudio.destination);
+    viento.start();
+    const agua = contextoAudio.createOscillator();
+    gananciaAgua = contextoAudio.createGain();
+    agua.type = "triangle";
+    agua.frequency.value = 92;
+    gananciaAgua.gain.value = 0;
+    agua.connect(gananciaAgua).connect(contextoAudio.destination);
+    agua.start();
   }
 }
-function updateAmbient() {
-  if (!audioContext || !waterGain) return;
-  const nearRiver =
-    Vector3.Distance(player.camera.position, new Vector3(150, 0, -175)) < 42;
-  waterGain.gain.setTargetAtTime(
-    nearRiver ? 0.025 : 0,
-    audioContext.currentTime,
+// Reproduce un ruido breve filtrado con Web Audio.
+function reproducirRuido(duracion, volumen, corte) {
+  if (!contextoAudio) return;
+  const buffer = contextoAudio.createBuffer(1, contextoAudio.sampleRate * duracion, contextoAudio.sampleRate);
+  const muestras = buffer.getChannelData(0);
+  for (let i = 0; i < muestras.length; i++) muestras[i] = Math.random() * 2 - 1;
+  const fuente = contextoAudio.createBufferSource();
+  const filtro = contextoAudio.createBiquadFilter();
+  const ganancia = contextoAudio.createGain();
+  fuente.buffer = buffer;
+  filtro.type = "lowpass";
+  filtro.frequency.value = corte;
+  ganancia.gain.setValueAtTime(volumen, contextoAudio.currentTime);
+  ganancia.gain.exponentialRampToValueAtTime(0.001, contextoAudio.currentTime + duracion);
+  fuente.connect(filtro).connect(ganancia).connect(contextoAudio.destination);
+  fuente.start();
+}
+// Reproduce el sonido de encender o apagar la linterna.
+function reproducirSonidoLinterna(activa) {
+  if (!contextoAudio) return;
+  const oscilador = contextoAudio.createOscillator();
+  const ganancia = contextoAudio.createGain();
+  oscilador.type = "square";
+  oscilador.frequency.setValueAtTime(
+    activa ? 480 : 210,
+    contextoAudio.currentTime,
+  );
+  oscilador.frequency.exponentialRampToValueAtTime(
+    activa ? 780 : 95,
+    contextoAudio.currentTime + 0.08,
+  );
+  ganancia.gain.setValueAtTime(0.035, contextoAudio.currentTime);
+  ganancia.gain.exponentialRampToValueAtTime(0.001, contextoAudio.currentTime + 0.1);
+  oscilador.connect(ganancia).connect(contextoAudio.destination);
+  oscilador.start();
+  oscilador.stop(contextoAudio.currentTime + 0.11);
+}
+// Ajusta los sonidos ambientales según la posición.
+function actualizarAmbiente() {
+  if (!contextoAudio || !gananciaAgua) return;
+  const cercaRio =
+    Vector3.Distance(jugador.camera.position, new Vector3(150, 0, -175)) < 42;
+  gananciaAgua.gain.setTargetAtTime(
+    cercaRio ? 0.045 : 0,
+    contextoAudio.currentTime,
     0.4,
   );
+  if (cercaRio && contextoAudio.currentTime >= proximoSonidoRio) {
+    proximoSonidoRio = contextoAudio.currentTime + 1.3;
+    reproducirRuido(0.7, 0.018, 850);
+  }
 }
-function playCreatureSound() {
-  if (!audioContext) return;
-  const oscillator = audioContext.createOscillator();
-  const gain = audioContext.createGain();
-  oscillator.type = "sawtooth";
-  oscillator.frequency.setValueAtTime(72, audioContext.currentTime);
-  oscillator.frequency.exponentialRampToValueAtTime(
+// Reproduce la señal sonora de la criatura cercana.
+function reproducirSonidoCriatura() {
+  if (!contextoAudio) return;
+  const oscilador = contextoAudio.createOscillator();
+  const ganancia = contextoAudio.createGain();
+  oscilador.type = "sawtooth";
+  oscilador.frequency.setValueAtTime(72, contextoAudio.currentTime);
+  oscilador.frequency.exponentialRampToValueAtTime(
     32,
-    audioContext.currentTime + 0.45,
+    contextoAudio.currentTime + 0.45,
   );
-  gain.gain.setValueAtTime(0.04, audioContext.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.5);
-  oscillator.connect(gain).connect(audioContext.destination);
-  oscillator.start();
-  oscillator.stop(audioContext.currentTime + 0.52);
+  ganancia.gain.setValueAtTime(0.04, contextoAudio.currentTime);
+  ganancia.gain.exponentialRampToValueAtTime(0.001, contextoAudio.currentTime + 0.5);
+  oscilador.connect(ganancia).connect(contextoAudio.destination);
+  oscilador.start();
+  oscilador.stop(contextoAudio.currentTime + 0.52);
 }
-function updateFootsteps(controls) {
-  const moving =
-    controls.forward || controls.back || controls.left || controls.right;
+// Reproduce pasos a la cadencia del movimiento.
+function actualizarPasos(controles) {
+  const moviendo =
+    controles.forward || controles.back || controles.left || controles.right;
   if (
-    !audioContext ||
-    !moving ||
-    noteOpen ||
-    escaped ||
-    audioContext.currentTime < nextFootstep
+    !contextoAudio ||
+    !moviendo ||
+    notaAbierta ||
+    escapo ||
+    contextoAudio.currentTime < proximoPaso
   )
     return;
-  const running = controls.run;
-  nextFootstep = audioContext.currentTime + (running ? 0.27 : 0.46);
-  const oscillator = audioContext.createOscillator();
-  const gain = audioContext.createGain();
-  oscillator.type = "triangle";
-  oscillator.frequency.value = running ? 84 : 63;
-  gain.gain.setValueAtTime(running ? 0.042 : 0.024, audioContext.currentTime);
-  gain.gain.exponentialRampToValueAtTime(
+  const corriendo = controles.run;
+  proximoPaso = contextoAudio.currentTime + (corriendo ? 0.27 : 0.46);
+  reproducirRuido(0.075, corriendo ? 0.045 : 0.027, corriendo ? 420 : 300);
+  const oscilador = contextoAudio.createOscillator();
+  const ganancia = contextoAudio.createGain();
+  oscilador.type = "triangle";
+  oscilador.frequency.value = corriendo ? 102 : 63;
+  ganancia.gain.setValueAtTime(corriendo ? 0.055 : 0.028, contextoAudio.currentTime);
+  ganancia.gain.exponentialRampToValueAtTime(
     0.001,
-    audioContext.currentTime + 0.09,
+    contextoAudio.currentTime + 0.09,
   );
-  oscillator.connect(gain).connect(audioContext.destination);
-  oscillator.start();
-  oscillator.stop(audioContext.currentTime + 0.1);
+  oscilador.connect(ganancia).connect(contextoAudio.destination);
+  oscilador.start();
+  oscilador.stop(contextoAudio.currentTime + 0.1);
 }
-function reloadRifle() {
+// Recarga el rifle usando la munición de reserva.
+function recargarRifle() {
   if (!state.inventory.rifle)
-    return toast("Necesitas encontrar el rifle de caza.");
-  const needed = 3 - state.rifleAmmo;
-  if (!needed) return toast("El cargador ya está lleno.");
-  if (!state.inventory.ammo) return toast("No tienes munición de reserva.");
-  const loaded = Math.min(needed, state.inventory.ammo);
-  state.rifleAmmo += loaded;
-  state.inventory.ammo -= loaded;
+    return mostrarAviso("Necesitas encontrar el rifle de caza.");
+  const necesarias = 3 - state.rifleAmmo;
+  if (!necesarias) return mostrarAviso("El cargador ya está lleno.");
+  if (!state.inventory.ammo) return mostrarAviso("No tienes munición de reserva.");
+  const cargadas = Math.min(necesarias, state.inventory.ammo);
+  state.rifleAmmo += cargadas;
+  state.inventory.ammo -= cargadas;
   if (!state.inventory.ammo) delete state.inventory.ammo;
-  renderInventory(state);
-  updateRifleHud();
-  saveGame(state);
-  toast(`Recargaste ${loaded} bala${loaded === 1 ? "" : "s"}.`);
+  renderizarInventario(state);
+  actualizarIndicadorRifle();
+  guardarPartida(state);
+  mostrarAviso(`Recargaste ${cargadas} bala${cargadas === 1 ? "" : "s"}.`);
 }
-function useMedkit() {
+// Consume un botiquín y recupera salud.
+function usarBotiquin() {
   if (!state.inventory.medkit) return;
-  if (state.health >= 100) return toast("Tu salud ya está completa.");
+  if (state.health >= 100) return mostrarAviso("Tu salud ya está completa.");
   state.inventory.medkit--;
   if (!state.inventory.medkit) delete state.inventory.medkit;
   state.health = Math.min(100, state.health + 55);
-  renderInventory(state);
-  updateVitals();
-  saveGame(state);
-  toast("Usaste un botiquín.");
+  renderizarInventario(state);
+  actualizarSignosVitales();
+  guardarPartida(state);
+  mostrarAviso("Usaste un botiquín.");
 }
-function shootRifle() {
+// Dispara el rifle y ahuyenta a la criatura si está cerca.
+function dispararRifle() {
   if (!state.inventory.rifle)
-    return toast("Necesitas encontrar el rifle de caza.");
-  if (!state.rifleAmmo) return reloadRifle();
-  const now = performance.now();
-  if (now - lastShotAt < 450) return;
-  lastShotAt = now;
+    return mostrarAviso("Necesitas encontrar el rifle de caza.");
+  if (!state.rifleAmmo) return recargarRifle();
+  const ahora = performance.now();
+  if (ahora - ultimoDisparo < 450) return;
+  ultimoDisparo = ahora;
   state.rifleAmmo--;
-  updateRifleHud();
-  saveGame(state);
-  muzzleUntil = now + 70;
-  enableAudio();
-  if (audioContext) {
-    const oscillator = audioContext.createOscillator();
-    const gain = audioContext.createGain();
-    oscillator.type = "sawtooth";
-    oscillator.frequency.setValueAtTime(140, audioContext.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(
+  actualizarIndicadorRifle();
+  guardarPartida(state);
+  destelloHasta = ahora + 70;
+  activarAudio();
+  if (contextoAudio) {
+    reproducirRuido(0.13, 0.13, 1800);
+    const oscilador = contextoAudio.createOscillator();
+    const ganancia = contextoAudio.createGain();
+    oscilador.type = "sawtooth";
+    oscilador.frequency.setValueAtTime(140, contextoAudio.currentTime);
+    oscilador.frequency.exponentialRampToValueAtTime(
       45,
-      audioContext.currentTime + 0.14,
+      contextoAudio.currentTime + 0.14,
     );
-    gain.gain.setValueAtTime(0.12, audioContext.currentTime);
-    gain.gain.exponentialRampToValueAtTime(
+    ganancia.gain.setValueAtTime(0.12, contextoAudio.currentTime);
+    ganancia.gain.exponentialRampToValueAtTime(
       0.001,
-      audioContext.currentTime + 0.16,
+      contextoAudio.currentTime + 0.16,
     );
-    oscillator.connect(gain).connect(audioContext.destination);
-    oscillator.start();
-    oscillator.stop(audioContext.currentTime + 0.17);
+    oscilador.connect(ganancia).connect(contextoAudio.destination);
+    oscilador.start();
+    oscilador.stop(contextoAudio.currentTime + 0.17);
   }
-  const forward = player.camera.getDirection(Vector3.Forward());
-  const target = creature.position.subtract(player.camera.position);
-  const distance = target.length();
+  const adelante = jugador.camera.getDirection(Vector3.Forward());
+  const objetivo = criatura.position.subtract(jugador.camera.position);
+  const distancia = objetivo.length();
   if (
-    creature.isVisible &&
-    distance < 30 &&
-    Vector3.Dot(forward, target.normalize()) > 0.9
+    criatura.isVisible &&
+    distancia < 30 &&
+    Vector3.Dot(adelante, objetivo.normalize()) > 0.9
   ) {
-    creatureHealth--;
-    if (creatureHealth <= 0) {
-      creature.metadata.disabledUntil = now + 18000;
-      creature.isVisible = false;
-      creature.metadata.alerted = false;
-      toast("La criatura cayó. Tienes unos segundos.");
+    saludCriatura--;
+    if (saludCriatura <= 0) {
+      criatura.metadata.disabledUntil = ahora + 18000;
+      criatura.isVisible = false;
+      criatura.metadata.alerted = false;
+      mostrarAviso("La criatura cayó. Tienes unos segundos.");
     } else {
-      creature.metadata.alerted = true;
-      toast(`Impacto. La criatura resiste (${creatureHealth}/3).`);
+      criatura.metadata.alerted = true;
+      mostrarAviso(`Impacto. La criatura resiste (${saludCriatura}/3).`);
     }
   } else {
-    creature.metadata.alerted = true;
-    toast(`El disparo resonó. Cargador: ${state.rifleAmmo}/3.`);
+    criatura.metadata.alerted = true;
+    mostrarAviso(`El disparo resonó. Cargador: ${state.rifleAmmo}/3.`);
   }
 }
-function openMap() {
+// Abre el mapa ampliado.
+function abrirMapa() {
   document.querySelector("#world-map").hidden = false;
 }
-function closeMap() {
+// Cierra el mapa ampliado.
+function cerrarMapa() {
   document.querySelector("#world-map").hidden = true;
 }
-function updateCreature(delta, controls) {
-  const now = performance.now();
-  if (creature.metadata.disabledUntil > now) return;
-  if (!creature.isVisible) {
-    creature.isVisible = true;
-    creatureHealth = 3;
-    creature.position.copyFrom(creature.metadata.home);
-    toast("Algo se levantó entre los árboles.");
+// Actualiza la alerta, movimiento y daño de la criatura.
+function actualizarCriatura(delta, controles) {
+  const ahora = performance.now();
+  if (criatura.metadata.disabledUntil > ahora) return;
+  if (!criatura.isVisible) {
+    criatura.isVisible = true;
+    saludCriatura = 3;
+    criatura.position.copyFrom(criatura.metadata.home);
+    mostrarAviso("Algo se levantó entre los árboles.");
   }
-  if (escaped) return;
-  const playerPosition = player.camera.position;
-  const offset = playerPosition.subtract(creature.position);
-  offset.y = 0;
-  const distance = offset.length();
-  const runningNearby =
-    controls.run &&
-    (controls.forward || controls.back || controls.left || controls.right) &&
-    distance < 32;
-  if (!creature.metadata.alerted && (runningNearby || distance < 9)) {
-    creature.metadata.alerted = true;
-    playCreatureSound();
-    toast("Algo te ha escuchado entre los árboles.");
+  if (escapo) return;
+  const posicionJugador = jugador.camera.position;
+  const desplazamiento = posicionJugador.subtract(criatura.position);
+  desplazamiento.y = 0;
+  const distancia = desplazamiento.length();
+  const corriendoCerca =
+    controles.run &&
+    (controles.forward || controles.back || controles.left || controles.right) &&
+    distancia < 32;
+  if (!criatura.metadata.alerted && (corriendoCerca || distancia < 9)) {
+    criatura.metadata.alerted = true;
+    reproducirSonidoCriatura();
+    mostrarAviso("Algo te ha escuchado entre los árboles.");
   }
-  if (!creature.metadata.alerted) return;
-  if (distance > 1.4) {
-    offset.normalize();
-    creature.position.addInPlace(
-      offset.scale(Math.min(distance - 1.4, delta * 2.65)),
+  if (!criatura.metadata.alerted) return;
+  if (distancia > 1.4) {
+    desplazamiento.normalize();
+    criatura.position.addInPlace(
+      desplazamiento.scale(Math.min(distancia - 1.4, delta * 2.65)),
     );
-    creature.position.y =
-      world.terrainHeight(creature.position.x, creature.position.z) + 1.4;
-    creature.rotation.y = Math.atan2(offset.x, offset.z);
+    criatura.position.y =
+      mundo.alturaTerreno(criatura.position.x, criatura.position.z) + 1.4;
+    criatura.rotation.y = Math.atan2(desplazamiento.x, desplazamiento.z);
   }
-  if (distance < 2.2) state.health = Math.max(0, state.health - delta * 24);
+  if (distancia < 2.2) state.health = Math.max(0, state.health - delta * 24);
   if (state.health === 0) {
     state.health = 100;
-    player.camera.position.set(0, 1.7, -1.5);
-    creature.position.copyFrom(creature.metadata.home);
-    creature.metadata.alerted = false;
-    toast("La oscuridad te devolvió a la cabaña.");
+    jugador.camera.position.set(0, 1.7, -1.5);
+    criatura.position.copyFrom(criatura.metadata.home);
+    criatura.metadata.alerted = false;
+    mostrarAviso("La oscuridad te devolvió a la cabaña.");
   }
 }
 
-interact = interactMission;
-engine.setHardwareScalingLevel(state.settings.quality === "high" ? 1 : 1.5);
+motor.setHardwareScalingLevel(state.settings.quality === "high" ? 1 : 1.5);
 document.querySelector("#flashlight-mode").textContent =
   state.settings.flashlightMode === "long" ? "LEJOS" : "CERCA";
-renderInventory(state);
-renderJournal(state);
-updateVitals();
-updateBattery();
-updateRifleHud();
-updateObjective();
-document.querySelector("#start-button").addEventListener("click", () => {
-  enableAudio();
-  document.querySelector("#intro").classList.add("hidden");
-});
+renderizarInventario(state);
+renderizarBitacora(state);
+actualizarSignosVitales();
+actualizarBateria();
+actualizarIndicadorRifle();
+actualizarObjetivo();
+document.querySelector("#start-button").addEventListener("click", iniciarBriefing);
+document.querySelector("#briefing-continue").addEventListener("click", entrarBosque);
 document
   .querySelector("#save-button")
-  .addEventListener("click", saveCurrentGame);
+  .addEventListener("click", guardarPartidaActual);
 document
   .querySelector("#flashlight-button")
-  .addEventListener("click", toggleFlashlight);
+  .addEventListener("click", alternarLinterna);
 document
   .querySelector("#quality-button")
-  .addEventListener("click", toggleQuality);
+  .addEventListener("click", alternarCalidad);
 document
   .querySelector("#backpack-button")
-  .addEventListener("click", openBackpack);
+  .addEventListener("click", abrirMochila);
 document
   .querySelector("#close-backpack")
-  .addEventListener("click", closeBackpack);
-document.querySelector("#close-note").addEventListener("click", closeNote);
-document.querySelector("#minimap").addEventListener("click", openMap);
+  .addEventListener("click", cerrarMochila);
+document.querySelector("#close-note").addEventListener("click", cerrarNota);
+document.querySelector("#minimap").addEventListener("click", abrirMapa);
 document.querySelector("#minimap").addEventListener("keydown", (event) => {
   if (event.code === "Enter" || event.code === "Space") {
     event.preventDefault();
-    openMap();
+    abrirMapa();
   }
 });
-document.querySelector("#close-map").addEventListener("click", closeMap);
+document.querySelector("#close-map").addEventListener("click", cerrarMapa);
 document
   .querySelector("#replace-battery")
-  .addEventListener("click", replaceBattery);
+  .addEventListener("click", reemplazarBateria);
 document
   .querySelector("#decline-battery")
   .addEventListener(
@@ -853,33 +917,33 @@ document
     () => (document.querySelector("#battery-modal").hidden = true),
   );
 document.querySelector("#restart-game").addEventListener("click", () => {
-  escaped = false;
+  escapo = false;
   document.querySelector("#ending-modal").hidden = true;
   if (state.chapter2 && !state.chapter2Finished)
-    player.camera.position.set(
-      world.stationPoint.x,
-      world.stationPoint.y + 1.7,
-      world.stationPoint.z + 7,
+    jugador.camera.position.set(
+      mundo.stationPoint.x,
+      mundo.stationPoint.y + 1.7,
+      mundo.stationPoint.z + 7,
     );
-  else player.camera.position.set(0, 1.7, -1.5);
-  updateObjective();
+  else jugador.camera.position.set(0, 1.7, -1.5);
+  actualizarObjetivo();
 });
 document.querySelector("#next-chapter").addEventListener("click", () => {
   state.chapter2 = true;
-  escaped = false;
+  escapo = false;
   document.querySelector("#ending-modal").hidden = true;
-  world.pickups
-    .filter((pickup) => pickup.metadata.chapter === 2)
-    .forEach((pickup) => pickup.setEnabled(true));
-  player.camera.position.set(
-    world.stationPoint.x,
-    world.stationPoint.y + 1.7,
-    world.stationPoint.z + 7,
+  mundo.pickups
+    .filter((recogible) => recogible.metadata.chapter === 2)
+    .forEach((recogible) => recogible.setEnabled(true));
+  jugador.camera.position.set(
+    mundo.stationPoint.x,
+    mundo.stationPoint.y + 1.7,
+    mundo.stationPoint.z + 7,
   );
-  player.camera.rotation.set(0, Math.PI, 0);
-  updateObjective();
-  saveGame(state);
-  toast(
+  jugador.camera.rotation.set(0, Math.PI, 0);
+  actualizarObjetivo();
+  guardarPartida(state);
+  mostrarAviso(
     "Capítulo II: estación de bombeo. Encuentra tres fusibles industriales.",
   );
 });
@@ -892,28 +956,28 @@ document.querySelector("#items").addEventListener("click", (event) => {
     const document = state.documents.find(
       (entry) => entry.id === read.dataset.readNote,
     );
-    if (document) showNote(document.text, document.title);
+    if (document) mostrarNota(document.text, document.title);
   }
-  if (deleteNote) discardNote(deleteNote.dataset.deleteNote);
-  if (use?.dataset.useItem === "medkit") useMedkit();
-  if (deleteItem) discardItem(deleteItem.dataset.deleteItem);
+  if (deleteNote) descartarNota(deleteNote.dataset.deleteNote);
+  if (use?.dataset.useItem === "medkit") usarBotiquin();
+  if (deleteItem) descartarObjeto(deleteItem.dataset.deleteItem);
 });
-document.querySelector("#touch-interact").addEventListener("click", interact);
+document.querySelector("#touch-interact").addEventListener("click", interactuar);
 [
   ["#touch-run", "run"],
   ["#touch-jump", "jump"],
 ].forEach(([selector, key]) => {
   const button = document.querySelector(selector);
-  button.addEventListener("pointerdown", () => (touchInput[key] = true));
+  button.addEventListener("pointerdown", () => (entradaTactil[key] = true));
   ["pointerup", "pointerleave", "pointercancel"].forEach((event) =>
-    button.addEventListener(event, () => (touchInput[key] = false)),
+    button.addEventListener(event, () => (entradaTactil[key] = false)),
   );
 });
 document.querySelectorAll("[data-move]").forEach((button) => {
   const key = button.dataset.move;
-  button.addEventListener("pointerdown", () => (touchInput[key] = 1));
+  button.addEventListener("pointerdown", () => (entradaTactil[key] = 1));
   ["pointerup", "pointerleave", "pointercancel"].forEach((event) =>
-    button.addEventListener(event, () => (touchInput[key] = 0)),
+    button.addEventListener(event, () => (entradaTactil[key] = 0)),
   );
 });
 window.addEventListener("keydown", (event) => {
@@ -925,61 +989,61 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
   if (event.ctrlKey && event.code === "KeyA") {
     event.preventDefault();
-    saveCurrentGame();
+    guardarPartidaActual();
     return;
   }
-  pressedKeys.add(event.code);
-  if (event.code === "Escape") closeMap();
-  if (event.code === "KeyE") noteOpen ? closeNote() : interact();
-  if (event.code === "KeyM" && !event.repeat) openBackpack();
-  if (event.code === "KeyF" && !noteOpen && !event.repeat) toggleFlashlight();
-  if (event.code === "KeyL" && !noteOpen && !event.repeat)
-    toggleFlashlightMode();
-  if (event.code === "KeyG" && !noteOpen && !event.repeat) shootRifle();
-  if (event.code === "KeyR" && !noteOpen && !event.repeat) reloadRifle();
-  if (event.code === "KeyH" && !noteOpen && !event.repeat) useMedkit();
+  teclasPulsadas.add(event.code);
+  if (event.code === "Escape") cerrarMapa();
+  if (event.code === "KeyE") notaAbierta ? cerrarNota() : interactuar();
+  if (event.code === "KeyM" && !event.repeat) abrirMochila();
+  if (event.code === "KeyF" && !notaAbierta && !event.repeat) alternarLinterna();
+  if (event.code === "KeyL" && !notaAbierta && !event.repeat)
+    alternarModoLinterna();
+  if (event.code === "KeyG" && !notaAbierta && !event.repeat) dispararRifle();
+  if (event.code === "KeyR" && !notaAbierta && !event.repeat) recargarRifle();
+  if (event.code === "KeyH" && !notaAbierta && !event.repeat) usarBotiquin();
 });
-window.addEventListener("keyup", (event) => pressedKeys.delete(event.code));
-window.addEventListener("blur", () => pressedKeys.clear());
-scene.onBeforeRenderObservable.add(() => {
+window.addEventListener("keyup", (event) => teclasPulsadas.delete(event.code));
+window.addEventListener("blur", () => teclasPulsadas.clear());
+escena.onBeforeRenderObservable.add(() => {
   try {
-    const delta = engine.getDeltaTime() / 1000;
-    const controls = inputState();
-    if (!noteOpen && !escaped) updatePlayer(player, controls, delta, world);
-    updateFlashlight();
+    const delta = motor.getDeltaTime() / 1000;
+    const controles = estadoEntrada();
+    if (!notaAbierta && !escapo) actualizarJugador(jugador, controles, delta, mundo);
+    actualizarLinterna();
     if (
-      Math.abs(player.camera.position.x) > 224 ||
-      Math.abs(player.camera.position.z) > 224
+      Math.abs(jugador.camera.position.x) > 224 ||
+      Math.abs(jugador.camera.position.z) > 224
     ) {
-      player.camera.position.set(0, 1.7, -1.5);
-      toast("El bosque termina aquí. Regresaste a la cabaña.");
+      jugador.camera.position.set(0, 1.7, -1.5);
+      mostrarAviso("El bosque termina aquí. Regresaste a la cabaña.");
     }
     if (state.flashlight) {
       state.battery = Math.max(0, state.battery - delta * 0.12);
       if (!state.battery) {
-        setFlashlight(false);
-        showBatteryPrompt();
+        configurarLinterna(false);
+        mostrarAvisoBateria();
       }
     }
-    const moving =
-      controls.forward || controls.back || controls.left || controls.right;
+    const moviendo =
+      controles.forward || controles.back || controles.left || controles.right;
     state.energy =
-      controls.run && moving
-        ? Math.max(0, state.energy - delta * 12)
-        : Math.min(100, state.energy + delta * 7);
+      controles.run && moviendo
+        ? Math.max(0, state.energy - delta * 6)
+        : Math.min(100, state.energy + delta * 10);
     state.hunger = Math.max(0, state.hunger - delta * 1.2);
-    updateFootsteps(controls);
-    updateAmbient();
-    updateCreature(delta, controls);
-    updateNearby();
-    updateMinimap();
-    updateVitals();
-    updateBattery();
+    actualizarPasos(controles);
+    actualizarAmbiente();
+    actualizarCriatura(delta, controles);
+    actualizarCercano();
+    actualizarMinimapa();
+    actualizarSignosVitales();
+    actualizarBateria();
   } catch (error) {
     console.error(error);
     document.querySelector("#objective").textContent =
       `Error de escena: ${error.message}`;
   }
 });
-engine.runRenderLoop(() => scene.render());
-window.addEventListener("resize", () => engine.resize());
+motor.runRenderLoop(() => escena.render());
+window.addEventListener("resize", () => motor.resize());

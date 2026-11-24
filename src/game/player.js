@@ -1,19 +1,26 @@
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 
-export function createPlayer(scene, canvas) {
-  const camera = new UniversalCamera(
+export const velocidadesMovimiento = {
+  caminar: 6.3,
+  correr: 9.7,
+  agachado: 2,
+};
+
+// Crea y configura la cámara que representa al jugador.
+export function crearJugador(escena, lienzo) {
+  const camara = new UniversalCamera(
     "player",
     new Vector3(0, 1.7, -1.5),
-    scene,
+    escena,
   );
-  camera.setTarget(new Vector3(0, 1.7, 3));
-  camera.attachControl(canvas, true);
-  camera.angularSensibility = 3800;
-  camera.minZ = 0.1;
-  camera.inputs.removeByType("FreeCameraKeyboardMoveInput");
+  camara.setTarget(new Vector3(0, 1.7, 3));
+  camara.attachControl(lienzo, true);
+  camara.angularSensibility = 3800;
+  camara.minZ = 0.1;
+  camara.inputs.removeByType("FreeCameraKeyboardMoveInput");
   return {
-    camera,
+    camera: camara,
     velocity: new Vector3(),
     verticalVelocity: 0,
     crouching: false,
@@ -23,68 +30,74 @@ export function createPlayer(scene, canvas) {
   };
 }
 
-function isBlocked(position, obstacles) {
-  return obstacles.some(({ x, z, radius, halfX, halfZ }) =>
+// Indica si una posición choca con un obstáculo del mundo.
+function estaBloqueado(posicion, obstaculos) {
+  return obstaculos.some(({ x, z, radius, halfX, halfZ }) =>
     radius
-      ? Math.abs(position.x - x) < radius && Math.abs(position.z - z) < radius
-      : Math.abs(position.x - x) < halfX && Math.abs(position.z - z) < halfZ,
+      ? Math.abs(posicion.x - x) < radius && Math.abs(posicion.z - z) < radius
+      : Math.abs(posicion.x - x) < halfX && Math.abs(posicion.z - z) < halfZ,
   );
 }
 
-export function updatePlayer(player, input, delta, world) {
-  const { camera } = player;
-  const forward = camera.getDirection(Vector3.Forward());
-  const right = camera.getDirection(Vector3.Right());
-  forward.y = 0;
-  right.y = 0;
-  forward.normalize();
-  right.normalize();
-  const direction = forward
-    .scale(input.forward - input.back)
-    .add(right.scale(input.right - input.left));
-  if (direction.lengthSquared() > 0) direction.normalize();
-  player.crouching = input.crouch;
-  const targetSpeed = player.crouching ? 2 : input.run ? 8.7 : 5.7;
-  const smoothing = direction.lengthSquared() ? 12 : 9;
-  player.velocity.x +=
-    (direction.x * targetSpeed - player.velocity.x) *
-    Math.min(1, smoothing * delta);
-  player.velocity.z +=
-    (direction.z * targetSpeed - player.velocity.z) *
-    Math.min(1, smoothing * delta);
-  if (input.jump && player.onGround && !player.crouching) {
-    player.verticalVelocity = 5.2;
-    player.onGround = false;
+// Actualiza movimiento, colisiones, salto y balanceo del jugador.
+export function actualizarJugador(jugador, entrada, delta, mundo) {
+  const { camera: camara } = jugador;
+  const adelante = camara.getDirection(Vector3.Forward());
+  const derecha = camara.getDirection(Vector3.Right());
+  adelante.y = 0;
+  derecha.y = 0;
+  adelante.normalize();
+  derecha.normalize();
+  const direccion = adelante
+    .scale(entrada.forward - entrada.back)
+    .add(derecha.scale(entrada.right - entrada.left));
+  if (direccion.lengthSquared() > 0) direccion.normalize();
+  jugador.crouching = entrada.crouch;
+  const velocidadObjetivo = jugador.crouching
+    ? velocidadesMovimiento.agachado
+    : entrada.run
+      ? velocidadesMovimiento.correr
+      : velocidadesMovimiento.caminar;
+  const suavizado = direccion.lengthSquared() ? 12 : 9;
+  jugador.velocity.x +=
+    (direccion.x * velocidadObjetivo - jugador.velocity.x) *
+    Math.min(1, suavizado * delta);
+  jugador.velocity.z +=
+    (direccion.z * velocidadObjetivo - jugador.velocity.z) *
+    Math.min(1, suavizado * delta);
+  if (entrada.jump && jugador.onGround && !jugador.crouching) {
+    jugador.verticalVelocity = 5.2;
+    jugador.onGround = false;
   }
-  player.verticalVelocity -= 13 * delta;
-  const next = camera.position.add(
-    new Vector3(player.velocity.x * delta, 0, player.velocity.z * delta),
+  jugador.verticalVelocity -= 13 * delta;
+  const siguiente = camara.position.add(
+    new Vector3(jugador.velocity.x * delta, 0, jugador.velocity.z * delta),
   );
-  if (!isBlocked(next, world.obstacles)) camera.position.copyFrom(next);
-  const stair = world.stairs?.find(
+  if (!estaBloqueado(siguiente, mundo.obstacles)) camara.position.copyFrom(siguiente);
+  const escalera = mundo.stairs?.find(
     ({ x, z, halfX, halfZ }) =>
-      Math.abs(next.x - x) < halfX && Math.abs(next.z - z) < halfZ,
+      Math.abs(siguiente.x - x) < halfX && Math.abs(siguiente.z - z) < halfZ,
   );
-  if (stair) {
-    const progress = Math.max(
+  if (escalera) {
+    const progreso = Math.max(
       0,
-      Math.min(1, (stair.startZ - next.z) / (stair.startZ - stair.endZ)),
+      Math.min(1, (escalera.startZ - siguiente.z) / (escalera.startZ - escalera.endZ)),
     );
-    player.upstairs = progress > 0.12;
+    jugador.upstairs = progreso > 0.12;
   }
-  const ground = world.groundHeight
-    ? world.groundHeight(camera.position.x, camera.position.z, player.upstairs)
-    : world.terrainHeight(camera.position.x, camera.position.z);
-  const height = player.crouching ? 1.15 : 1.7;
-  camera.position.y += player.verticalVelocity * delta;
-  if (camera.position.y <= ground + height) {
-    camera.position.y = ground + height;
-    player.verticalVelocity = 0;
-    player.onGround = true;
+  const suelo = mundo.groundHeight
+    ? mundo.groundHeight(camara.position.x, camara.position.z, jugador.upstairs)
+    : mundo.alturaTerreno(camara.position.x, camara.position.z);
+  const altura = jugador.crouching ? 1.15 : 1.7;
+  camara.position.y += jugador.verticalVelocity * delta;
+  if (camara.position.y <= suelo + altura) {
+    camara.position.y = suelo + altura;
+    jugador.verticalVelocity = 0;
+    jugador.onGround = true;
   }
-  const moving =
-    Math.abs(player.velocity.x) + Math.abs(player.velocity.z) > 0.25 &&
-    player.onGround;
-  player.bob += moving ? delta * (input.run ? 13 : 9) : 0;
-  camera.cameraDirection.y = moving ? Math.sin(player.bob) * 0.0012 : 0;
+  const moviendose =
+    Math.abs(jugador.velocity.x) + Math.abs(jugador.velocity.z) > 0.25 &&
+    jugador.onGround;
+  jugador.bob += moviendose ? delta * (entrada.run ? 13 : 9) : 0;
+  camara.cameraDirection.y = moviendose ? Math.sin(jugador.bob) * 0.0012 : 0;
 }

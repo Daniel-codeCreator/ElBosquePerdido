@@ -55,6 +55,7 @@
         ><i class="map-marker river-marker" title="Río">≈</i
         ><i class="map-marker beacon-marker" title="Radio de emergencia">✦</i
         ><i class="map-marker station-marker" title="Estación de bombeo">▣</i
+        ><i class="objective-marker" id="objective-marker" title="Siguiente misión">✦</i
         ><i class="player-marker" id="player-marker"></i>
       </div>
       <small>PULSA PARA ABRIR EL MAPA</small>
@@ -137,6 +138,7 @@
           ><i class="map-marker river-marker" data-label="RÍO">≈</i
           ><i class="map-marker beacon-marker" data-label="RADIO">✦</i
           ><i class="map-marker station-marker" data-label="ESTACIÓN">▣</i
+          ><i class="objective-marker" id="world-objective-marker">✦</i
           ><i class="player-marker" id="world-player-marker"></i>
         </div>
         <small
@@ -146,17 +148,13 @@
       </div>
     </section>
     <section class="intro" id="intro">
-      <p>CAPITULO I</p>
+      <p class="intro-kicker">ARCHIVO 08 / INFORME DE BÚSQUEDA</p>
       <h1>La cabaña de vigilancia</h1>
-      <span
-        >La puerta estaba abierta. Dentro aún huele a humo.<br />Daniel estuvo
-        aquí.</span
-      ><button
-        id="start-button"
-        onclick="document.getElementById('intro').classList.add('hidden')"
-      >
-        ENTRAR A LA CABAÑA</button
-      ><small
+      <p class="intro-story" id="intro-story" aria-live="polite"></p>
+      <span class="intro-hint">Una señal de auxilio sigue activa en el Bosque Norte.</span>
+      <button id="start-button">ABRIR EXPEDIENTE</button>
+      <button id="briefing-continue" hidden>COMENZAR BÚSQUEDA</button>
+      <small
         >WASD o flechas para caminar · Ratón para mirar · F linterna · L cambia
         el haz · E usar · G disparar · R recargar · H botiquín</small
       >

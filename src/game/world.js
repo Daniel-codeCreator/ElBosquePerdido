@@ -5,53 +5,56 @@ import { VertexBuffer } from "@babylonjs/core/Meshes/buffer";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { PointLight } from "@babylonjs/core/Lights/pointLight";
 
-function mat(scene, name, color, emissive) {
-  const value = new StandardMaterial(name, scene);
-  value.diffuseColor = Color3.FromHexString(color);
-  value.specularColor = Color3.Black();
-  if (emissive) value.emissiveColor = Color3.FromHexString(emissive);
-  return value;
+// Crea un material básico con color difuso y brillo opcional.
+function crearMaterial(escena, nombre, color, emisivo) {
+  const material = new StandardMaterial(nombre, escena);
+  material.diffuseColor = Color3.FromHexString(color);
+  material.specularColor = Color3.Black();
+  if (emisivo) material.emissiveColor = Color3.FromHexString(emisivo);
+  return material;
 }
-export function terrainHeight(x, z) {
+// Calcula la altura del terreno en unas coordenadas del bosque.
+export function alturaTerreno(x, z) {
   if (Math.abs(x) < 7 && z > -15 && z < 8) return 0;
   return Math.sin(x * 0.11) * 0.65 + Math.cos(z * 0.09) * 0.5;
 }
 
-export function buildWorld(scene, quality = "high") {
+// Construye la geometría, objetos y zonas interactuables del mundo.
+export function construirMundo(scene, calidad = "high") {
   const obstacles = [];
   const pickups = [];
-  const platforms = [];
-  const stairs = [];
-  const density = quality === "low" ? 280 : 540;
-  const ground = MeshBuilder.CreateGround(
+  const plataformas = [];
+  const escaleras = [];
+  const densidad = calidad === "low" ? 280 : 540;
+  const terreno = MeshBuilder.CreateGround(
     "forest terrain",
     { width: 460, height: 460, subdivisions: 128 },
     scene,
   );
-  const positions = ground.getVerticesData(VertexBuffer.PositionKind);
-  for (let i = 0; i < positions.length; i += 3)
-    positions[i + 1] = terrainHeight(positions[i], positions[i + 2]);
-  ground.updateVerticesData(VertexBuffer.PositionKind, positions);
-  ground.material = mat(scene, "mossy ground", "#213421");
-  const trunk = mat(scene, "trunks", "#241a12");
-  const needles = mat(scene, "needles", "#173b23");
-  const rockMat = mat(scene, "rocks", "#42504a");
-  const bushMat = mat(scene, "bushes", "#315333");
-  const treeSource = MeshBuilder.CreateCylinder(
+  const posiciones = terreno.getVerticesData(VertexBuffer.PositionKind);
+  for (let i = 0; i < posiciones.length; i += 3)
+    posiciones[i + 1] = alturaTerreno(posiciones[i], posiciones[i + 2]);
+  terreno.updateVerticesData(VertexBuffer.PositionKind, posiciones);
+  terreno.material = crearMaterial(scene, "mossy ground", "#294632");
+  const tronco = crearMaterial(scene, "trunks", "#352619");
+  const agujas = crearMaterial(scene, "needles", "#1c4b31");
+  const materialRoca = crearMaterial(scene, "rocks", "#4a625d");
+  const materialArbusto = crearMaterial(scene, "bushes", "#3d6840");
+  const fuenteArbol = MeshBuilder.CreateCylinder(
     "tree source",
     { height: 7, diameter: 0.55 },
     scene,
   );
-  treeSource.material = trunk;
-  treeSource.position.y = -1000;
-  const crownSource = MeshBuilder.CreateCylinder(
+  fuenteArbol.material = tronco;
+  fuenteArbol.position.y = -1000;
+  const fuenteCopa = MeshBuilder.CreateCylinder(
     "crown source",
     { height: 6, diameterTop: 0, diameterBottom: 4.3 },
     scene,
   );
-  crownSource.material = needles;
-  crownSource.position.y = -1000;
-  for (let i = 0; i < density; i++) {
+  fuenteCopa.material = agujas;
+  fuenteCopa.position.y = -1000;
+  for (let i = 0; i < densidad; i++) {
     const x = ((i * 47) % 420) - 210;
     const z = ((i * 79) % 420) - 210;
     if (
@@ -59,75 +62,59 @@ export function buildWorld(scene, quality = "high") {
       (Math.abs(x) < 3 && z < 2 && z > -215)
     )
       continue;
-    const scale = 0.7 + (i % 6) * 0.12;
-    const base = terrainHeight(x, z);
-    const tree = treeSource.createInstance(`tree-${i}`);
-    tree.position.set(x, base + 3.5 * scale, z);
-    tree.scaling.setAll(scale);
-    const crown = crownSource.createInstance(`crown-${i}`);
-    crown.position.set(x, base + 7.5 * scale, z);
-    crown.scaling.setAll(scale);
-    if (i % 3 === 0) obstacles.push({ x, z, radius: 0.65 * scale });
+    const escala = 0.7 + (i % 6) * 0.12;
+    const base = alturaTerreno(x, z);
+    const arbol = fuenteArbol.createInstance(`tree-${i}`);
+    arbol.position.set(x, base + 3.5 * escala, z);
+    arbol.scaling.setAll(escala);
+    const copa = fuenteCopa.createInstance(`crown-${i}`);
+    copa.position.set(x, base + 7.5 * escala, z);
+    copa.scaling.setAll(escala);
+    if (i % 3 === 0) obstacles.push({ x, z, radius: 0.65 * escala });
     if (i % 4 === 0) {
-      const bush = MeshBuilder.CreateSphere(
+      const arbusto = MeshBuilder.CreateSphere(
         `bush-${i}`,
         { diameter: 1.1 + (i % 3) * 0.3, segments: 6 },
         scene,
       );
-      bush.position.set(x + 1.5, base + 0.45, z - 1);
-      bush.material = bushMat;
+      arbusto.position.set(x + 1.5, base + 0.45, z - 1);
+      arbusto.material = materialArbusto;
     }
   }
   for (let i = 0; i < 90; i++) {
     const x = ((i * 19) % 380) - 190;
     const z = ((i * 29) % 380) - 190;
-    const rock = MeshBuilder.CreateSphere(
+    const roca = MeshBuilder.CreateSphere(
       `rock-${i}`,
       { diameter: 1 + (i % 4) * 0.45, segments: 6 },
       scene,
     );
-    rock.position.set(x, terrainHeight(x, z) + 0.35, z);
-    rock.scaling.y = 0.65;
-    rock.material = rockMat;
+    roca.position.set(x, alturaTerreno(x, z) + 0.35, z);
+    roca.scaling.y = 0.65;
+    roca.material = materialRoca;
     obstacles.push({ x, z, radius: 0.7 });
   }
-  const log = MeshBuilder.CreateCylinder(
+  const troncoCaido = MeshBuilder.CreateCylinder(
     "fallen log",
     { height: 5, diameter: 0.45 },
     scene,
   );
-  log.rotation.z = Math.PI / 2;
-  log.position.set(-11, terrainHeight(-11, -10) + 0.4, -10);
-  log.material = trunk;
+  troncoCaido.rotation.z = Math.PI / 2;
+  troncoCaido.position.set(-11, alturaTerreno(-11, -10) + 0.4, -10);
+  troncoCaido.material = tronco;
   obstacles.push({ x: -11, z: -10, radius: 1.8 });
-  createCabin(scene, obstacles);
-  createHouse(scene, obstacles, -28, -48, "ranger shack");
-  createHouse(scene, obstacles, 29, -132, "riverside house");
-  createTwoStoryHouse(
-    scene,
-    obstacles,
-    platforms,
-    stairs,
-    -95,
-    -100,
-    "fire lookout",
-  );
-  createTwoStoryHouse(
-    scene,
-    obstacles,
-    platforms,
-    stairs,
-    90,
-    -165,
-    "hunter lodge",
-  );
-  createRiver(scene);
-  const stationPoint = createStation(scene, obstacles);
-  createSky(scene, quality);
-  const escapePoint = createExit(scene);
-  const creature = createCreature(scene);
+  crearCabana(scene, obstacles);
+  crearCasa(scene, obstacles, -28, -48, "ranger shack");
+  crearCasa(scene, obstacles, 29, -132, "riverside house");
+  crearCasaGrande(scene, obstacles, -95, -100, "fire lookout");
+  crearCasaGrande(scene, obstacles, 90, -165, "hunter lodge");
+  crearRio(scene);
+  const stationPoint = crearEstacion(scene, obstacles);
+  crearCielo(scene, calidad);
+  const escapePoint = crearSalida(scene);
+  const creature = crearCriatura(scene);
   pickups.push(
-    createPickup(
+    crearRecogible(
       scene,
       "note-1",
       "note",
@@ -138,7 +125,7 @@ export function buildWorld(scene, quality = "high") {
     ),
   );
   pickups.push(
-    createPickup(
+    crearRecogible(
       scene,
       "battery-cabin",
       "battery",
@@ -146,7 +133,7 @@ export function buildWorld(scene, quality = "high") {
       "Batería sobre el estante",
       "Encontraste una batería de linterna.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "wood-1",
       "wood",
@@ -154,87 +141,87 @@ export function buildWorld(scene, quality = "high") {
       "Leña junto al sendero",
       "Recogiste leña.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "wood-2",
       "wood",
-      new Vector3(-6, terrainHeight(-6, -7) + 0.4, -7),
+      new Vector3(-6, alturaTerreno(-6, -7) + 0.4, -7),
       "Tronco seco",
       "Recogiste leña.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "berries-1",
       "berries",
-      new Vector3(8, terrainHeight(8, -8) + 0.5, -8),
+      new Vector3(8, alturaTerreno(8, -8) + 0.5, -8),
       "Frutas silvestres",
       "Recogiste frutas silvestres.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "berries-2",
       "berries",
-      new Vector3(-13, terrainHeight(-13, -18) + 0.5, -18),
+      new Vector3(-13, alturaTerreno(-13, -18) + 0.5, -18),
       "Frutas silvestres",
       "Recogiste frutas silvestres.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "berries-3",
       "berries",
-      new Vector3(4, terrainHeight(4, -35) + 0.5, -35),
+      new Vector3(4, alturaTerreno(4, -35) + 0.5, -35),
       "Frutas silvestres",
       "Recogiste frutas silvestres.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "berries-4",
       "berries",
-      new Vector3(-9, terrainHeight(-9, -58) + 0.5, -58),
+      new Vector3(-9, alturaTerreno(-9, -58) + 0.5, -58),
       "Frutas silvestres",
       "Recogiste frutas silvestres.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "berries-5",
       "berries",
-      new Vector3(11, terrainHeight(11, -83) + 0.5, -83),
+      new Vector3(11, alturaTerreno(11, -83) + 0.5, -83),
       "Frutas silvestres",
       "Recogiste frutas silvestres.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "berries-6",
       "berries",
-      new Vector3(-7, terrainHeight(-7, -108) + 0.5, -108),
+      new Vector3(-7, alturaTerreno(-7, -108) + 0.5, -108),
       "Frutas silvestres",
       "Recogiste frutas silvestres.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "berries-7",
       "berries",
-      new Vector3(-24, terrainHeight(-24, -41) + 0.5, -41),
+      new Vector3(-24, alturaTerreno(-24, -41) + 0.5, -41),
       "Frutas silvestres",
       "Recogiste frutas silvestres.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "berries-8",
       "berries",
-      new Vector3(27, terrainHeight(27, -120) + 0.5, -120),
+      new Vector3(27, alturaTerreno(27, -120) + 0.5, -120),
       "Frutas silvestres",
       "Recogiste frutas silvestres.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "battery-forest",
       "battery",
-      new Vector3(-9, terrainHeight(-9, -16) + 0.6, -16),
+      new Vector3(-9, alturaTerreno(-9, -16) + 0.6, -16),
       "Batería abandonada",
       "Encontraste una batería de linterna.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "note-2",
       "note",
@@ -243,197 +230,238 @@ export function buildWorld(scene, quality = "high") {
       "Encontraste otra nota.",
       "La cosa escucha los pasos y aprende las voces. La carretera no es segura, pero hay una luz al norte.\n\nDaniel",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "note-3",
       "note",
-      new Vector3(-28, terrainHeight(-28, -48) + 1.15, -48),
+      new Vector3(-28, alturaTerreno(-28, -48) + 1.15, -48),
       "Nota en la casa del guardabosque",
       "Encontraste una nota de Daniel.",
       "La casa estaba vacía cuando llegué. Encontré las pilas y el mapa del río. El agua corta el bosque, pero el viejo puente sigue en pie.\n\nDaniel",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "knife-ranger",
       "knife",
-      new Vector3(-27.1, terrainHeight(-27.1, -47.4) + 0.9, -47.4),
+      new Vector3(-27.1, alturaTerreno(-27.1, -47.4) + 0.9, -47.4),
       "Cuchillo de monte",
       "Encontraste un cuchillo de monte.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "note-4",
       "note",
-      new Vector3(29, terrainHeight(29, -132) + 1.15, -132),
+      new Vector3(29, alturaTerreno(29, -132) + 1.15, -132),
       "Nota en la casa junto al río",
       "Encontraste otra nota de Daniel.",
       "La señal viene del norte. No puedo volver por el río: algo camina bajo el agua cuando cae la noche.\n\nDaniel",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "rifle-riverside",
       "rifle",
-      new Vector3(30.2, terrainHeight(30.2, -131.4) + 0.9, -131.4),
-      "Rifle de caza",
+      new Vector3(24.2, alturaTerreno(24.2, -132) + 0.5, -132),
+      "Rifle de caza junto a la casa",
       "Encontraste un rifle de caza oxidado.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "note-5",
       "note",
-      new Vector3(-5.5, terrainHeight(-5.5, -164) + 0.45, -164),
+      new Vector3(-5.5, alturaTerreno(-5.5, -164) + 0.45, -164),
       "Página mojada",
       "Encontraste otra nota de Daniel.",
       "Corre solo si la oyes cerca. La cosa sigue el ruido, pero se pierde entre los árboles. La baliza está casi al final del camino.\n\nDaniel",
     ),
   );
   pickups.push(
-    createPickup(
+    crearRecogible(
       scene,
       "ammo-lookout",
       "ammo",
-      new Vector3(-94, terrainHeight(-94, -100) + 4, -100),
+      new Vector3(-94, alturaTerreno(-94, -100) + 1, -100),
       "Caja de munición",
       "Encontraste 3 balas de rifle.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "medkit-lookout",
       "medkit",
-      new Vector3(-96.1, terrainHeight(-96.1, -100) + 4, -100),
+      new Vector3(-96.1, alturaTerreno(-96.1, -100) + 1, -100),
       "Botiquín de emergencia",
       "Encontraste un botiquín.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "note-6",
       "note",
-      new Vector3(-95, terrainHeight(-95, -100) + 4.15, -99.4),
+      new Vector3(-95, alturaTerreno(-95, -100) + 1.15, -99.4),
       "Registro de la torre",
       "Encontraste una nota de Daniel.",
       "Desde el segundo piso vi la baliza. Hay otra casa al este, pero la criatura ronda el sendero cuando escucha disparos.\n\nDaniel",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "ammo-lodge",
       "ammo",
-      new Vector3(91, terrainHeight(91, -165) + 4, -165),
+      new Vector3(91, alturaTerreno(91, -165) + 1, -165),
       "Caja de munición",
       "Encontraste 3 balas de rifle.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "fuse-lodge",
       "radioFuse",
-      new Vector3(89, terrainHeight(89, -165) + 4, -165),
+      new Vector3(89, alturaTerreno(89, -165) + 1.1, -165),
       "Fusible de radio",
       "Encontraste el fusible de la radio.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "note-7",
       "note",
-      new Vector3(90, terrainHeight(90, -165) + 4.15, -164.4),
+      new Vector3(90, alturaTerreno(90, -165) + 1.15, -164.4),
       "Carta del cazador",
       "Encontraste una nota de Daniel.",
       "El rifle todavía funciona. Guarda los disparos para cuando la cosa esté cerca. Al norte del río está la última señal.\n\nDaniel",
     ),
   );
-  const stationPickups = [
-    createPickup(
+  const recursosBosque = [
+    ["berries-trail-1", "berries", -18, -28, "Arbusto de moras", "Recogiste frutas silvestres."],
+    ["battery-trail-1", "battery", -21, -36, "Batería olvidada", "Encontraste una batería de linterna."],
+    ["ammo-trail-1", "ammo", -32, -57, "Cartuchos en una caja", "Encontraste 3 balas de rifle."],
+    ["berries-trail-2", "berries", -40, -68, "Arbusto de moras", "Recogiste frutas silvestres."],
+    ["battery-trail-2", "battery", -54, -82, "Batería entre las rocas", "Encontraste una batería de linterna."],
+    ["ammo-trail-2", "ammo", -76, -94, "Cartuchos de cazador", "Encontraste 3 balas de rifle."],
+    ["medkit-trail-1", "medkit", -109, -107, "Botiquín abandonado", "Encontraste un botiquín."],
+    ["berries-trail-3", "berries", -70, -123, "Frutas silvestres", "Recogiste frutas silvestres."],
+    ["battery-trail-3", "battery", -42, -116, "Batería mojada", "Encontraste una batería de linterna."],
+    ["ammo-river-1", "ammo", 14, -115, "Cartuchos junto al río", "Encontraste 3 balas de rifle."],
+    ["berries-river-1", "berries", 17, -143, "Frutas silvestres", "Recogiste frutas silvestres."],
+    ["battery-river-1", "battery", 43, -145, "Batería de repuesto", "Encontraste una batería de linterna."],
+    ["ammo-river-2", "ammo", 61, -151, "Caja de cartuchos", "Encontraste 3 balas de rifle."],
+    ["berries-north-1", "berries", 57, -177, "Frutas silvestres", "Recogiste frutas silvestres."],
+    ["battery-north-1", "battery", 72, -181, "Batería abandonada", "Encontraste una batería de linterna."],
+    ["ammo-north-1", "ammo", 104, -181, "Cartuchos de emergencia", "Encontraste 3 balas de rifle."],
+    ["medkit-north-1", "medkit", 112, -191, "Botiquín de emergencia", "Encontraste un botiquín."],
+    ["berries-station-1", "berries", 119, -185, "Frutas silvestres", "Recogiste frutas silvestres."],
+  ];
+  // Crea los recursos distribuidos por el bosque.
+  recursosBosque.forEach(([id, type, x, z, label, message]) => {
+    const altura = type === "berries" ? 0.5 : 0.42;
+    pickups.push(
+      crearRecogible(
+        scene,
+        id,
+        type,
+        new Vector3(x, alturaTerreno(x, z) + altura, z),
+        label,
+        message,
+      ),
+    );
+  });
+  const coleccionablesEstacion = [
+    crearRecogible(
       scene,
       "station-card",
       "card",
-      new Vector3(137, terrainHeight(137, -204) + 0.5, -204),
+      new Vector3(137, alturaTerreno(137, -204) + 0.5, -204),
       "Tarjeta de seguridad",
       "Encontraste la tarjeta de acceso.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "station-fuse-a",
       "industrialFuse",
-      new Vector3(140, terrainHeight(140, -197) + 0.5, -197),
+      new Vector3(140, alturaTerreno(140, -197) + 0.5, -197),
       "Fusible industrial",
       "Encontraste un fusible de estación.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "station-fuse-b",
       "industrialFuse",
-      new Vector3(159, terrainHeight(159, -205) + 0.5, -205),
+      new Vector3(159, alturaTerreno(159, -205) + 0.5, -205),
       "Fusible industrial",
       "Encontraste un fusible de estación.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "station-fuse-c",
       "industrialFuse",
-      new Vector3(151, terrainHeight(151, -215) + 0.5, -215),
+      new Vector3(151, alturaTerreno(151, -215) + 0.5, -215),
       "Fusible industrial",
       "Encontraste un fusible de estación.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "station-generator",
       "generator",
-      new Vector3(150, terrainHeight(150, -210) + 0.7, -210),
+      new Vector3(150, alturaTerreno(150, -210) + 0.7, -210),
       "Panel de generadores",
       "Los tres generadores vuelven a rugir.",
     ),
-    createPickup(
+    crearRecogible(
       scene,
       "daniel-shelter",
       "daniel",
-      new Vector3(150, terrainHeight(150, -218) + 0.9, -218),
+      new Vector3(150, alturaTerreno(150, -218) + 0.9, -218),
       "Refugio de Daniel",
       "Daniel está vivo. La compuerta se abre hacia el exterior.",
     ),
   ];
-  stationPickups.forEach((pickup) => (pickup.metadata.chapter = 2));
-  pickups.push(...stationPickups);
+  // Asigna el capítulo a los objetos de la estación.
+  coleccionablesEstacion.forEach(
+    (coleccionable) => (coleccionable.metadata.chapter = 2),
+  );
+  pickups.push(...coleccionablesEstacion);
   return {
     pickups,
     obstacles,
-    terrainHeight,
+    alturaTerreno,
     stationPoint,
     stairs,
+    // Calcula la altura de suelo incluidas plataformas y escaleras.
     groundHeight(x, z, upstairs) {
-      const platform = platforms.find(
-        (area) =>
-          Math.abs(x - area.x) < area.halfX &&
-          Math.abs(z - area.z) < area.halfZ,
+      const plataforma = platforms.find(
+        // Encuentra la plataforma que contiene las coordenadas.
+        (zona) =>
+          Math.abs(x - zona.x) < zona.halfX &&
+          Math.abs(z - zona.z) < zona.halfZ,
       );
-      const stair = stairs.find(
-        (area) =>
-          Math.abs(x - area.x) < area.halfX &&
-          Math.abs(z - area.z) < area.halfZ,
+      const escalera = stairs.find(
+        // Encuentra la escalera que contiene las coordenadas.
+        (zona) =>
+          Math.abs(x - zona.x) < zona.halfX &&
+          Math.abs(z - zona.z) < zona.halfZ,
       );
-      if (stair) {
-        const progress = Math.max(
+      if (escalera) {
+        const progreso = Math.max(
           0,
-          Math.min(1, (stair.startZ - z) / (stair.startZ - stair.endZ)),
+          Math.min(1, (escalera.startZ - z) / (escalera.startZ - escalera.endZ)),
         );
         return (
-          terrainHeight(x, z) +
-          progress * (stair.height - terrainHeight(stair.x, stair.z))
+          alturaTerreno(x, z) +
+          progreso * (escalera.height - alturaTerreno(escalera.x, escalera.z))
         );
       }
-      return upstairs && platform ? platform.height : terrainHeight(x, z);
+      return upstairs && plataforma ? plataforma.height : alturaTerreno(x, z);
     },
     escapePoint,
     creature,
   };
 }
 
-function createCabin(scene, obstacles) {
-  const cabin = mat(scene, "cabin", "#4d3c28", "#100904");
+// Construye la cabaña inicial y registra sus paredes como obstáculos.
+function crearCabana(scene, obstacles) {
+  const cabin = crearMaterial(scene, "cabin", "#4d3c28", "#100904");
   const floor = MeshBuilder.CreateBox(
     "cabin floor",
     { width: 8, height: 0.18, depth: 7 },
     scene,
   );
   floor.position.y = 0.1;
-  floor.material = mat(scene, "floor", "#342a1d", "#090604");
+  floor.material = crearMaterial(scene, "floor", "#342a1d", "#090604");
   new PointLight("cabin lamp", new Vector3(0, 3.3, 0.8), scene).intensity = 1.4;
   [
     [-4, 0, 0.35, 3.5],
@@ -441,6 +469,7 @@ function createCabin(scene, obstacles) {
     [0, 3.5, 4, 0.25],
     [-2.8, -3.5, 1.2, 0.25],
     [2.8, -3.5, 1.2, 0.25],
+  // Construye cada pared de la cabaña.
   ].forEach(([x, z, halfX, halfZ], i) => {
     const wall = MeshBuilder.CreateBox(
       `wall-${i}`,
@@ -457,26 +486,27 @@ function createCabin(scene, obstacles) {
     scene,
   );
   roof.position.y = 4.2;
-  roof.material = mat(scene, "roof", "#16120e");
+  roof.material = crearMaterial(scene, "roof", "#16120e");
   const table = MeshBuilder.CreateBox(
     "table",
     { width: 1.8, height: 1.1, depth: 0.9 },
     scene,
   );
   table.position.set(1.6, 0.55, -0.4);
-  table.material = mat(scene, "table", "#4a3824");
+  table.material = crearMaterial(scene, "table", "#4a3824");
   const car = MeshBuilder.CreateBox(
     "vehicle",
     { width: 2.4, height: 1.15, depth: 4.4 },
     scene,
   );
   car.position.set(0, 0.65, -12);
-  car.material = mat(scene, "vehicle", "#27312d");
+  car.material = crearMaterial(scene, "vehicle", "#27312d");
   obstacles.push({ x: 0, z: -12, radius: 1.4 });
 }
-function createHouse(scene, obstacles, x, z, name) {
-  const base = terrainHeight(x, z);
-  const wood = mat(scene, `${name} wood`, "#3c3022", "#0d0905");
+// Construye una casa pequeña de una planta.
+function crearCasa(scene, obstacles, x, z, name) {
+  const base = alturaTerreno(x, z);
+  const wood = crearMaterial(scene, `${name} wood`, "#3c3022", "#0d0905");
   const floor = MeshBuilder.CreateBox(
     `${name} floor`,
     { width: 6, height: 0.16, depth: 5 },
@@ -490,6 +520,7 @@ function createHouse(scene, obstacles, x, z, name) {
     [0, 2.5, 3, 0.25],
     [-2.1, -2.5, 0.9, 0.25],
     [2.1, -2.5, 0.9, 0.25],
+  // Construye cada pared de la casa.
   ].forEach(([offsetX, offsetZ, halfX, halfZ], index) => {
     const wall = MeshBuilder.CreateBox(
       `${name} wall ${index}`,
@@ -506,93 +537,74 @@ function createHouse(scene, obstacles, x, z, name) {
     scene,
   );
   roof.position.set(x, base + 3.35, z);
-  roof.material = mat(scene, `${name} roof mat`, "#17130f");
+  roof.material = crearMaterial(scene, `${name} roof mat`, "#17130f");
   const table = MeshBuilder.CreateBox(
     `${name} table`,
     { width: 1.4, height: 0.9, depth: 0.7 },
     scene,
   );
   table.position.set(x, base + 0.45, z + 0.65);
-  table.material = mat(scene, `${name} table mat`, "#4c3924");
+  table.material = crearMaterial(scene, `${name} table mat`, "#4c3924");
 }
-function createTwoStoryHouse(scene, obstacles, platforms, stairs, x, z, name) {
-  const base = terrainHeight(x, z);
-  const wood = mat(scene, `${name} wood`, "#443221", "#100a05");
-  [0, 3.1].forEach((level) => {
-    const floor = MeshBuilder.CreateBox(
-      `${name} floor ${level}`,
-      { width: 7, height: 0.16, depth: 6 },
+// Construye una casa grande de una sola planta.
+function crearCasaGrande(scene, obstacles, x, z, name) {
+  const base = alturaTerreno(x, z);
+  const wood = crearMaterial(scene, `${name} wood`, "#493522", "#120b06");
+  const floor = MeshBuilder.CreateBox(
+    `${name} floor`,
+    { width: 12, height: 0.18, depth: 10 },
+    scene,
+  );
+  floor.position.set(x, base + 0.09, z);
+  floor.material = wood;
+  [
+    [-6, 0, 0.28, 5],
+    [6, 0, 0.28, 5],
+    [0, 5, 6, 0.28],
+    [-4.25, -5, 1.75, 0.28],
+    [4.25, -5, 1.75, 0.28],
+  // Construye cada pared de la casa grande.
+  ].forEach(([offsetX, offsetZ, halfX, halfZ], index) => {
+    const wall = MeshBuilder.CreateBox(
+      `${name} wall ${index}`,
+      { width: halfX * 2, height: 3.5, depth: halfZ * 2 },
       scene,
     );
-    floor.position.set(x, base + level + 0.08, z);
-    floor.material = wood;
-    [
-      [-3.5, 0, 0.25, 3],
-      [3.5, 0, 0.25, 3],
-      [0, 3, 3.5, 0.25],
-      [-2.4, -3, 1.1, 0.25],
-      [2.4, -3, 1.1, 0.25],
-    ].forEach(([offsetX, offsetZ, halfX, halfZ], index) => {
-      const wall = MeshBuilder.CreateBox(
-        `${name} wall ${level}-${index}`,
-        { width: halfX * 2, height: 3.1, depth: halfZ * 2 },
-        scene,
-      );
-      wall.position.set(x + offsetX, base + level + 1.55, z + offsetZ);
-      wall.material = wood;
-      if (!level)
-        obstacles.push({ x: x + offsetX, z: z + offsetZ, halfX, halfZ });
-    });
-  });
-  for (let step = 0; step < 6; step++) {
-    const height = 0.48 + step * 0.44;
-    const stair = MeshBuilder.CreateBox(
-      `${name} stair ${step}`,
-      { width: 1.85, height, depth: 0.45 },
-      scene,
-    );
-    stair.position.set(x + 1.25, base + height / 2, z - 1.65 + step * 0.48);
-    stair.material = wood;
-  }
-  platforms.push({ x, z, halfX: 2.8, halfZ: 2.3, height: base + 3.1 });
-  stairs.push({
-    x: x + 1.25,
-    z: z - 0.35,
-    halfX: 1.05,
-    halfZ: 1.75,
-    height: base + 3.1,
-    startZ: z - 1.9,
-    endZ: z + 1.15,
+    wall.position.set(x + offsetX, base + 1.75, z + offsetZ);
+    wall.material = wood;
+    obstacles.push({ x: x + offsetX, z: z + offsetZ, halfX, halfZ });
   });
   const roof = MeshBuilder.CreateBox(
     `${name} roof`,
-    { width: 7.5, height: 0.28, depth: 6.5 },
+    { width: 12.7, height: 0.32, depth: 10.7 },
     scene,
   );
-  roof.position.set(x, base + 6.35, z);
-  roof.material = mat(scene, `${name} roof mat`, "#16110d");
+  roof.position.set(x, base + 3.65, z);
+  roof.material = crearMaterial(scene, `${name} roof mat`, "#17120e");
   const table = MeshBuilder.CreateBox(
     `${name} table`,
-    { width: 1.8, height: 0.9, depth: 0.8 },
+    { width: 2.2, height: 0.9, depth: 1 },
     scene,
   );
-  table.position.set(x - 1, base + 0.45, z + 0.7);
-  table.material = mat(scene, `${name} table mat`, "#503a24");
+  table.position.set(x - 2.2, base + 0.45, z + 0.9);
+  table.material = crearMaterial(scene, `${name} table mat`, "#563d25");
 }
-function createRiver(scene) {
+// Crea el tramo de río que atraviesa el norte del bosque.
+function crearRio(scene) {
   const river = MeshBuilder.CreateGround(
     "remote river",
     { width: 90, height: 12, subdivisions: 1 },
     scene,
   );
-  river.position.set(150, terrainHeight(150, -175) + 0.1, -175);
-  river.material = mat(scene, "remote river water", "#0b2930", "#07313b");
+  river.position.set(150, alturaTerreno(150, -175) + 0.1, -175);
+  river.material = crearMaterial(scene, "remote river water", "#10454f", "#07313b");
 }
-function createStation(scene, obstacles) {
+// Construye la estación y devuelve su punto de referencia.
+function crearEstacion(scene, obstacles) {
   const x = 150,
     z = -207,
-    base = terrainHeight(x, z),
-    concrete = mat(scene, "station concrete", "#303a3b", "#071010");
+    base = alturaTerreno(x, z),
+    concrete = crearMaterial(scene, "station concrete", "#303a3b", "#071010");
   const floor = MeshBuilder.CreateBox(
     "station yard",
     { width: 30, height: 0.2, depth: 27 },
@@ -606,6 +618,7 @@ function createStation(scene, obstacles) {
     [14, 0, 0.3, 9],
     [-7, -8, 5, 0.3],
     [7, -8, 5, 0.3],
+  // Construye cada muro de la estación.
   ].forEach(([ox, oz, hx, hz], i) => {
     const wall = MeshBuilder.CreateBox(
       `station wall ${i}`,
@@ -622,27 +635,28 @@ function createStation(scene, obstacles) {
     scene,
   );
   roof.position.set(x, base + 5, z + 1);
-  roof.material = mat(scene, "station roof mat", "#141c1d");
+  roof.material = crearMaterial(scene, "station roof mat", "#141c1d");
   const tunnel = MeshBuilder.CreateBox(
     "flooded tunnel",
     { width: 7, height: 0.14, depth: 15 },
     scene,
   );
   tunnel.position.set(x, base + 0.17, z - 13);
-  tunnel.material = mat(scene, "tunnel water", "#0a2c33", "#06343e");
+  tunnel.material = crearMaterial(scene, "tunnel water", "#0a2c33", "#06343e");
   return new Vector3(x, base, z);
 }
-function createSky(scene, quality) {
+// Añade la luna y las estrellas según la calidad seleccionada.
+function crearCielo(scene, calidad) {
   const moon = MeshBuilder.CreateSphere(
     "moon",
     { diameter: 5, segments: 16 },
     scene,
   );
   moon.position.set(26, 25, -52);
-  moon.material = mat(scene, "moon mat", "#d6dbc4", "#d6dbc4");
+  moon.material = crearMaterial(scene, "moon mat", "#d6dbc4", "#d6dbc4");
   moon.applyFog = false;
-  const stars = mat(scene, "stars", "#e8f1dc", "#e8f1dc");
-  for (let i = 0; i < (quality === "low" ? 150 : 420); i++) {
+  const stars = crearMaterial(scene, "stars", "#e8f1dc", "#e8f1dc");
+  for (let i = 0; i < (calidad === "low" ? 150 : 420); i++) {
     const a = i * 2.399,
       r = 220 + (i % 61),
       s = MeshBuilder.CreateSphere(
@@ -655,29 +669,31 @@ function createSky(scene, quality) {
     s.applyFog = false;
   }
 }
-function createExit(scene) {
-  const point = new Vector3(0, terrainHeight(0, -210), -210);
+// Crea la baliza que marca la salida del capítulo.
+function crearSalida(scene) {
+  const point = new Vector3(0, alturaTerreno(0, -210), -210);
   const beacon = MeshBuilder.CreateCylinder(
     "north beacon",
     { height: 6, diameter: 0.28, tessellation: 8 },
     scene,
   );
   beacon.position.copyFrom(point).addInPlace(new Vector3(0, 3, 0));
-  beacon.material = mat(scene, "beacon", "#8cc8c2", "#7cffeb");
+  beacon.material = crearMaterial(scene, "beacon", "#8cc8c2", "#7cffeb");
   const light = new PointLight("north beacon light", beacon.position, scene);
   light.diffuse = Color3.FromHexString("#91fff0");
   light.intensity = 2.5;
   light.range = 22;
   return point;
 }
-function createCreature(scene) {
+// Crea a la criatura y prepara su estado de persecución.
+function crearCriatura(scene) {
   const creature = MeshBuilder.CreateCylinder(
     "the listener",
     { height: 2.8, diameterTop: 0.45, diameterBottom: 0.8, tessellation: 6 },
     scene,
   );
-  creature.position.set(0, terrainHeight(0, -102) + 1.4, -102);
-  creature.material = mat(scene, "listener", "#13181a", "#07100f");
+  creature.position.set(0, alturaTerreno(0, -102) + 1.4, -102);
+  creature.material = crearMaterial(scene, "listener", "#13181a", "#07100f");
   const head = MeshBuilder.CreateSphere(
     "listener head",
     { diameter: 0.64, segments: 6 },
@@ -685,11 +701,12 @@ function createCreature(scene) {
   );
   head.parent = creature;
   head.position.y = 1.55;
-  head.material = mat(scene, "listener head mat", "#192225", "#0f2023");
+  head.material = crearMaterial(scene, "listener head mat", "#192225", "#0f2023");
   creature.metadata = { alerted: false, home: creature.position.clone() };
   return creature;
 }
-export function createPickup(
+// Crea un objeto coleccionable con su forma, color y metadatos.
+export function crearRecogible(
   scene,
   id,
   type,
@@ -698,7 +715,7 @@ export function createPickup(
   message,
   noteText = "",
 ) {
-  const colors = {
+  const colores = {
     note: ["#e7dcba", "#6f5b32"],
     wood: ["#714624", "#24130a"],
     berries: ["#b5353d", "#4b0810"],
@@ -714,48 +731,48 @@ export function createPickup(
     generator: ["#3b4945", "#79e5b4"],
     daniel: ["#c4d5c6", "#24342a"],
   };
-  let mesh;
+  let malla;
   if (type === "note") {
-    mesh = MeshBuilder.CreateBox(
+    malla = MeshBuilder.CreateBox(
       id,
       { width: 0.55, height: 0.05, depth: 0.72 },
       scene,
     );
   } else if (type === "wood") {
-    mesh = MeshBuilder.CreateCylinder(
+    malla = MeshBuilder.CreateCylinder(
       id,
       { height: 1.1, diameter: 0.26, tessellation: 8 },
       scene,
     );
-    mesh.rotation.z = Math.PI / 2;
+    malla.rotation.z = Math.PI / 2;
   } else if (type === "battery") {
-    mesh = MeshBuilder.CreateBox(
+    malla = MeshBuilder.CreateBox(
       id,
       { width: 0.34, height: 0.72, depth: 0.34 },
       scene,
     );
   } else if (type === "knife") {
-    mesh = MeshBuilder.CreateBox(
+    malla = MeshBuilder.CreateBox(
       id,
       { width: 0.12, height: 0.08, depth: 0.8 },
       scene,
     );
-    mesh.rotation.y = 0.5;
+    malla.rotation.y = 0.5;
   } else if (type === "rifle") {
-    mesh = MeshBuilder.CreateBox(
+    malla = MeshBuilder.CreateBox(
       id,
       { width: 0.16, height: 0.16, depth: 1.35 },
       scene,
     );
-    mesh.rotation.y = -0.35;
+    malla.rotation.y = -0.35;
   } else if (type === "ammo") {
-    mesh = MeshBuilder.CreateBox(
+    malla = MeshBuilder.CreateBox(
       id,
       { width: 0.46, height: 0.28, depth: 0.34 },
       scene,
     );
   } else if (type === "medkit") {
-    mesh = MeshBuilder.CreateBox(
+    malla = MeshBuilder.CreateBox(
       id,
       { width: 0.48, height: 0.3, depth: 0.42 },
       scene,
@@ -765,49 +782,49 @@ export function createPickup(
     type === "radioFuse" ||
     type === "industrialFuse"
   ) {
-    mesh = MeshBuilder.CreateCylinder(
+    malla = MeshBuilder.CreateCylinder(
       id,
       { height: 0.5, diameter: 0.12, tessellation: 8 },
       scene,
     );
-    mesh.rotation.z = Math.PI / 2;
+    malla.rotation.z = Math.PI / 2;
   } else if (type === "card") {
-    mesh = MeshBuilder.CreateBox(
+    malla = MeshBuilder.CreateBox(
       id,
       { width: 0.5, height: 0.08, depth: 0.34 },
       scene,
     );
   } else if (type === "generator") {
-    mesh = MeshBuilder.CreateBox(
+    malla = MeshBuilder.CreateBox(
       id,
       { width: 1.1, height: 1.2, depth: 0.75 },
       scene,
     );
   } else if (type === "daniel") {
-    mesh = MeshBuilder.CreateCylinder(
+    malla = MeshBuilder.CreateCylinder(
       id,
       { height: 1.7, diameter: 0.5, tessellation: 6 },
       scene,
     );
   } else {
-    mesh = MeshBuilder.CreateSphere(id, { diameter: 0.42, segments: 8 }, scene);
+    malla = MeshBuilder.CreateSphere(id, { diameter: 0.42, segments: 8 }, scene);
     for (let i = 0; i < 4; i++) {
-      const fruit = MeshBuilder.CreateSphere(
+      const fruta = MeshBuilder.CreateSphere(
         `${id}-fruit-${i}`,
         { diameter: 0.26, segments: 6 },
         scene,
       );
-      fruit.parent = mesh;
-      fruit.position.set(
+      fruta.parent = malla;
+      fruta.position.set(
         Math.cos(i * 1.57) * 0.24,
         0.1,
         Math.sin(i * 1.57) * 0.24,
       );
-      fruit.material = mat(scene, `${id}-fruit-mat-${i}`, "#cc3943", "#350306");
+      fruta.material = crearMaterial(scene, `${id}-fruit-mat-${i}`, "#cc3943", "#350306");
     }
   }
-  mesh.position = position;
-  mesh.material = mat(scene, `${id}-mat`, colors[type][0], colors[type][1]);
-  mesh.metadata = { id, type, label, message, noteText };
-  return mesh;
+  malla.position = position;
+  malla.material = crearMaterial(scene, `${id}-mat`, colores[type][0], colores[type][1]);
+  malla.metadata = { id, type, label, message, noteText };
+  return malla;
 }
