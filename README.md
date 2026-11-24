@@ -33,7 +33,11 @@ Prototipo 3D de supervivencia y terror psicológico en primera persona, creado c
 - Clic en el escenario: activar control de cámara con ratón.
 - `E`: recoger objetos, leer o cerrar una nota.
 - `F`: encender y apagar la linterna.
-- `M`: abrir la mochila.
+- `L`: alternar entre haz cercano y haz de largo alcance.
+- `M`: abrir la mochila o el mapa.
+- `G`: disparar el rifle.
+- `R`: recargar el rifle.
+- `H`: usar un botiquín.
 - `Ctrl + A`: guardar la partida localmente.
 
 ## Compilación de producción
@@ -47,3 +51,8 @@ Los archivos generados quedan en `dist/`.
 ## Guardado
 
 La partida se guarda localmente en el navegador mediante `localStorage`. No requiere servidor ni base de datos.
+
+## Documentación Del Juego
+
+- [Capítulos actuales y objetivos](./CAPITULOS_ACTUALES.md)
+- [Historia completa](./HISTORIA_DEL_JUEGO.md)
