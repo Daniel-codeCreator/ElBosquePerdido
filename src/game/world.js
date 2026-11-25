@@ -27,6 +27,18 @@ export function construirMundo(scene, calidad = "high") {
   const plataformas = [];
   const escaleras = [];
   const densidad = calidad === "low" ? 280 : 540;
+  // These are mission and landmark areas. Decorative collision must never make
+  // an existing objective inaccessible or hide it behind a new trunk or rock.
+  const zonasProtegidas = [
+    [0, 0, 12], [0, -12, 6], [-28, -48, 9], [29, -132, 9],
+    [-95, -100, 12], [90, -165, 12], [150, -207, 21], [-56, -70, 24],
+    [186, -164, 13], [0, -210, 10], [-18, -28, 5], [-54, -82, 5],
+    [-109, -107, 5], [-5.5, -164, 6], [112, -185, 6], [150, -218, 7],
+  ];
+  const decoracionSegura = (x, z, margen = 0) =>
+    !zonasProtegidas.some(([px, pz, radio]) =>
+      Math.hypot(x - px, z - pz) < radio + margen,
+    );
   const terreno = MeshBuilder.CreateGround(
     "forest terrain",
     { width: 460, height: 460, subdivisions: 128 },
@@ -39,6 +51,9 @@ export function construirMundo(scene, calidad = "high") {
   terreno.material = crearMaterial(scene, "mossy ground", "#294632");
   const tronco = crearMaterial(scene, "trunks", "#352619");
   const agujas = crearMaterial(scene, "needles", "#1c4b31");
+  const agujasClaras = crearMaterial(scene, "young needles", "#356b42");
+  const hojas = crearMaterial(scene, "broadleaf canopy", "#42663b");
+  const hojasOscuras = crearMaterial(scene, "broadleaf shade", "#294c31");
   const materialRoca = crearMaterial(scene, "rocks", "#4a625d");
   const materialArbusto = crearMaterial(scene, "bushes", "#3d6840");
   const fuenteArbol = MeshBuilder.CreateCylinder(
@@ -48,13 +63,34 @@ export function construirMundo(scene, calidad = "high") {
   );
   fuenteArbol.material = tronco;
   fuenteArbol.position.y = -1000;
-  const fuenteCopa = MeshBuilder.CreateCylinder(
+  const fuenteCopa = MeshBuilder.CreateIcoSphere(
     "crown source",
-    { height: 6, diameterTop: 0, diameterBottom: 4.3 },
+    { radius: 2.25, subdivisions: 2 },
     scene,
   );
   fuenteCopa.material = agujas;
   fuenteCopa.position.y = -1000;
+  const fuenteCopaAlta = MeshBuilder.CreateIcoSphere(
+    "tall crown source",
+    { radius: 1.8, subdivisions: 2 },
+    scene,
+  );
+  fuenteCopaAlta.material = agujasClaras;
+  fuenteCopaAlta.position.y = -1000;
+  const fuenteHoja = MeshBuilder.CreateSphere(
+    "broadleaf crown source",
+    { diameter: 3.8, segments: 7 },
+    scene,
+  );
+  fuenteHoja.material = hojas;
+  fuenteHoja.position.y = -1000;
+  const fuenteHojaSombra = MeshBuilder.CreateSphere(
+    "broadleaf shade source",
+    { diameter: 3.8, segments: 7 },
+    scene,
+  );
+  fuenteHojaSombra.material = hojasOscuras;
+  fuenteHojaSombra.position.y = -1000;
   for (let i = 0; i < densidad; i++) {
     const x = ((i * 47) % 420) - 210;
     const z = ((i * 79) % 420) - 210;
@@ -63,14 +99,38 @@ export function construirMundo(scene, calidad = "high") {
       (Math.abs(x) < 3 && z < 2 && z > -215)
     )
       continue;
+    if (!decoracionSegura(x, z, 3.5)) continue;
     const escala = 0.7 + (i % 6) * 0.12;
     const base = alturaTerreno(x, z);
     const arbol = fuenteArbol.createInstance(`tree-${i}`);
-    arbol.position.set(x, base + 3.5 * escala, z);
+    const frondoso = i % 5 === 0;
+    const altura = frondoso ? 5.4 : 7;
+    arbol.position.set(x, base + (altura * escala) / 2, z);
     arbol.scaling.setAll(escala);
-    const copa = fuenteCopa.createInstance(`crown-${i}`);
-    copa.position.set(x, base + 7.5 * escala, z);
-    copa.scaling.setAll(escala);
+    arbol.scaling.y = (altura / 7) * escala;
+    const copa = (frondoso ? fuenteHoja : fuenteCopa).createInstance(`crown-${i}`);
+    copa.position.set(x, base + (frondoso ? 6.4 : 6.6) * escala, z);
+    copa.scaling.setAll(frondoso ? escala * 0.86 : escala * 1.05);
+    if (frondoso) {
+      copa.scaling.y = 0.8 * escala;
+      const sombra = fuenteHojaSombra.createInstance(`crown-shade-${i}`);
+      sombra.position.set(x + 0.7 * escala, base + 6.05 * escala, z + 0.35 * escala);
+      sombra.scaling.setAll(escala * 0.58);
+      sombra.material = hojasOscuras;
+    } else {
+      // Las capas desplazadas rompen la silueta de cono y dejan ramas visibles.
+      copa.scaling.y = 0.72 * escala;
+      copa.scaling.x = 1.18 * escala;
+      copa.scaling.z = 0.96 * escala;
+      const copaMedia = fuenteCopa.createInstance(`middle-crown-${i}`);
+      copaMedia.position.set(x + 0.2 * escala, base + 8.2 * escala, z - 0.12 * escala);
+      copaMedia.scaling.set(0.88 * escala, 0.7 * escala, 0.82 * escala);
+      if (i % 2 === 0) {
+        const copaAlta = fuenteCopaAlta.createInstance(`upper-crown-${i}`);
+        copaAlta.position.set(x - 0.1 * escala, base + 9.75 * escala, z + 0.12 * escala);
+        copaAlta.scaling.set(0.58 * escala, 0.85 * escala, 0.55 * escala);
+      }
+    }
     if (i % 3 === 0) obstacles.push({ x, z, radius: 0.65 * escala });
     if (i % 4 === 0) {
       const arbusto = MeshBuilder.CreateSphere(
@@ -85,6 +145,7 @@ export function construirMundo(scene, calidad = "high") {
   for (let i = 0; i < 90; i++) {
     const x = ((i * 19) % 380) - 190;
     const z = ((i * 29) % 380) - 190;
+    if (!decoracionSegura(x, z, 3)) continue;
     const roca = MeshBuilder.CreateSphere(
       `rock-${i}`,
       { diameter: 1 + (i % 4) * 0.45, segments: 6 },
@@ -103,7 +164,7 @@ export function construirMundo(scene, calidad = "high") {
   troncoCaido.rotation.z = Math.PI / 2;
   troncoCaido.position.set(-11, alturaTerreno(-11, -10) + 0.4, -10);
   troncoCaido.material = tronco;
-  obstacles.push({ x: -11, z: -10, radius: 1.8 });
+  // Fallen logs are scenery only, keeping the initial trail and pickups clear.
   crearCabana(scene, obstacles);
   crearCasa(scene, obstacles, -28, -48, "ranger shack");
   crearCasa(scene, obstacles, 29, -132, "riverside house");
@@ -437,9 +498,11 @@ export function construirMundo(scene, calidad = "high") {
     ["hospital-file", "document", -45, -61.5, "Expedientes del hospital", "Los pacientes oían voces bajo el suelo antes de desaparecer."],
     ["police-file", "document", -68, -61.5, "Informes de la comisaría", "Los apagones y las desapariciones coinciden junto al río."],
     ["gas-record", "document", -56, -87.5, "Registro de la gasolinera", "Un acceso de servicio bajo el río lleva a la caverna original."],
-    ["cave-entry", "serviceDoor", 178, -161.8, "Entrada de servicio bajo el río", "El túnel conduce a las cámaras de bombeo."],
-    ["cave-valve", "valve", 187, -158, "Válvula de seguridad", "La válvula baja el agua durante un intervalo seguro."],
-    ["daniel-cave", "daniel", 193, -158, "Daniel Ortega", "Daniel está herido, pero consciente. Hay que activar el núcleo de la estación."],
+    // Estos tres elementos quedan delante del portal. El bloque del túnel es
+    // opaco y ocultaba los objetos cuando se colocaban en su interior.
+    ["cave-entry", "serviceDoor", 186, -164, "Entrada de servicio bajo el río", "El túnel conduce a las cámaras de bombeo."],
+    ["cave-valve", "valve", 181.5, -164, "Válvula de seguridad", "La válvula baja el agua durante un intervalo seguro."],
+    ["daniel-cave", "daniel", 190.5, -164, "Daniel Ortega", "Daniel está herido, pero consciente. Hay que activar el núcleo de la estación."],
     ["final-panel", "finalPanel", 150, -200, "Panel final de bombeo", "Las bombas despiertan, las luces sellan la caverna y la compuerta exterior se abre."],
   ];
   objetivosPosteriores.forEach(([id, type, x, z, label, message]) => {
@@ -483,6 +546,9 @@ export function construirMundo(scene, calidad = "high") {
     },
     escapePoint,
     creature,
+    isSafeMonsterPosition(x, z) {
+      return decoracionSegura(x, z, 14) && Math.abs(x) < 210 && Math.abs(z) < 210;
+    },
   };
 }
 
@@ -721,12 +787,26 @@ function crearCielo(scene, calidad) {
 // Crea la baliza que marca la salida del capítulo.
 function crearSalida(scene) {
   const point = new Vector3(0, alturaTerreno(0, -210), -210);
-  const beacon = MeshBuilder.CreateCylinder(
-    "north beacon",
-    { height: 6, diameter: 0.28, tessellation: 8 },
+  const base = MeshBuilder.CreateBox(
+    "emergency radio cabinet",
+    { width: 2.2, height: 1.5, depth: 0.8 },
     scene,
   );
-  beacon.position.copyFrom(point).addInPlace(new Vector3(0, 3, 0));
+  base.position.copyFrom(point).addInPlace(new Vector3(0, 0.75, 0));
+  base.material = crearMaterial(scene, "emergency radio cabinet", "#26353a", "#1b4945");
+  const panel = MeshBuilder.CreateBox(
+    "emergency radio panel",
+    { width: 1.35, height: 0.62, depth: 0.05 },
+    scene,
+  );
+  panel.position.copyFrom(point).addInPlace(new Vector3(0, 1.05, -0.43));
+  panel.material = crearMaterial(scene, "emergency radio panel", "#b7fff1", "#53eecf");
+  const beacon = MeshBuilder.CreateCylinder(
+    "north beacon",
+    { height: 8, diameter: 0.28, tessellation: 8 },
+    scene,
+  );
+  beacon.position.copyFrom(point).addInPlace(new Vector3(0, 5, 0));
   beacon.material = crearMaterial(scene, "beacon", "#8cc8c2", "#7cffeb");
   const light = new PointLight("north beacon light", beacon.position, scene);
   light.diffuse = Color3.FromHexString("#91fff0");
@@ -751,7 +831,37 @@ function crearCriatura(scene) {
   head.parent = creature;
   head.position.y = 1.55;
   head.material = crearMaterial(scene, "listener head mat", "#192225", "#0f2023");
-  creature.metadata = { alerted: false, home: creature.position.clone() };
+  const limbMaterial = crearMaterial(scene, "listener limbs", "#101516", "#060908");
+  const limbs = [];
+  [
+    [-0.42, 0.45, 0.1, "left arm"], [0.42, 0.45, -0.1, "right arm"],
+    [-0.22, -0.65, 0, "left leg"], [0.22, -0.65, 0, "right leg"],
+  ].forEach(([x, y, z, name], index) => {
+    const limb = MeshBuilder.CreateCylinder(
+      `listener ${name}`,
+      { height: index < 2 ? 1.45 : 1.6, diameterTop: 0.13, diameterBottom: 0.2, tessellation: 5 },
+      scene,
+    );
+    limb.parent = creature;
+    limb.position.set(x, y, z);
+    limb.rotation.z = index < 2 ? (index ? -0.16 : 0.16) : 0;
+    limb.material = limbMaterial;
+    limbs.push(limb);
+  });
+  const eyeMaterial = crearMaterial(scene, "listener eyes", "#b9f7cf", "#7cffbc");
+  [-0.16, 0.16].forEach((x, index) => {
+    const eye = MeshBuilder.CreateSphere(`listener eye ${index}`, { diameter: 0.11, segments: 4 }, scene);
+    eye.parent = head;
+    eye.position.set(x, 0.03, -0.28);
+    eye.material = eyeMaterial;
+  });
+  creature.metadata = {
+    alerted: false,
+    home: creature.position.clone(),
+    limbs,
+    walkPhase: 0,
+    nextAppearance: performance.now() + 11000,
+  };
   return creature;
 }
 // Crea un objeto coleccionable con su forma, color y metadatos.
@@ -867,8 +977,18 @@ export function crearRecogible(
       { width: 1.1, height: 1.2, depth: 0.75 },
       scene,
     );
-  } else if (type === "transmitter" || type === "document" || type === "valve") {
-    malla = MeshBuilder.CreateCylinder(id, { height: type === "valve" ? 0.22 : 0.75, diameter: type === "valve" ? 1 : 0.5, tessellation: 10 }, scene);
+  } else if (type === "transmitter" || type === "valve") {
+    malla = MeshBuilder.CreateCylinder(
+      id,
+      {
+        height: type === "transmitter" ? 3.2 : 0.22,
+        diameter: type === "transmitter" ? 0.7 : 1,
+        tessellation: 10,
+      },
+      scene,
+    );
+  } else if (type === "document") {
+    malla = MeshBuilder.CreateBox(id, { width: 0.68, height: 0.08, depth: 0.92 }, scene);
   } else if (type === "daniel") {
     malla = MeshBuilder.CreateCylinder(
       id,
@@ -894,6 +1014,61 @@ export function crearRecogible(
   }
   malla.position = position;
   malla.material = crearMaterial(scene, `${id}-mat`, colores[type][0], colores[type][1]);
+  // Detail meshes are children: the interactable root retains its exact mission
+  // position and metadata while the object has a recognizable silhouette.
+  const detalle = (nombre, options, local, color) => {
+    const mesh = MeshBuilder.CreateBox(`${id}-${nombre}`, options, scene);
+    mesh.parent = malla;
+    mesh.position.copyFrom(local);
+    mesh.material = crearMaterial(scene, `${id}-${nombre}-mat`, color);
+    return mesh;
+  };
+  if (type === "battery") {
+    detalle("terminal", { width: 0.18, height: 0.09, depth: 0.18 }, new Vector3(0, 0.4, 0), "#d9ded0");
+  } else if (type === "knife") {
+    detalle("handle", { width: 0.18, height: 0.12, depth: 0.28 }, new Vector3(0, 0.02, 0.28), "#39271a");
+  } else if (type === "rifle") {
+    detalle("barrel", { width: 0.07, height: 0.07, depth: 0.92 }, new Vector3(0, 0.08, -0.65), "#85908c");
+    detalle("stock", { width: 0.22, height: 0.2, depth: 0.48 }, new Vector3(0, -0.03, 0.52), "#684124");
+  } else if (type === "ammo") {
+    [-0.12, 0, 0.12].forEach((x, index) => {
+      const cartridge = MeshBuilder.CreateCylinder(`${id}-cartridge-${index}`, { height: 0.3, diameter: 0.07, tessellation: 6 }, scene);
+      cartridge.parent = malla;
+      cartridge.position.set(x, 0.22, 0);
+      cartridge.material = crearMaterial(scene, `${id}-cartridge-mat-${index}`, "#c99a3a");
+    });
+  } else if (type === "medkit") {
+    detalle("cross-vertical", { width: 0.07, height: 0.04, depth: 0.28 }, new Vector3(0, 0.17, -0.22), "#b62d2d");
+    detalle("cross-horizontal", { width: 0.28, height: 0.04, depth: 0.07 }, new Vector3(0, 0.17, -0.22), "#b62d2d");
+  } else if (type === "generator" || type === "finalPanel") {
+    detalle("screen", { width: 0.55, height: 0.34, depth: 0.04 }, new Vector3(0, 0.18, -0.4), "#7dffbd");
+  } else if (type === "serviceDoor") {
+    detalle("window", { width: 0.48, height: 0.34, depth: 0.04 }, new Vector3(0, 0.2, -0.4), "#13292a");
+    detalle("access-light", { width: 0.1, height: 0.1, depth: 0.05 }, new Vector3(0.38, -0.22, -0.4), "#7dffdb");
+  } else if (type === "transmitter") {
+    const antenna = MeshBuilder.CreateCylinder(`${id}-antenna`, { height: 1.45, diameter: 0.06, tessellation: 6 }, scene);
+    antenna.parent = malla;
+    antenna.position.y = 2.2;
+    antenna.material = crearMaterial(scene, `${id}-antenna-mat`, "#9bc6bf");
+  } else if (type === "valve") {
+    const handle = MeshBuilder.CreateTorus(`${id}-wheel`, { diameter: 0.85, thickness: 0.1, tessellation: 10 }, scene);
+    handle.parent = malla;
+    handle.rotation.x = Math.PI / 2;
+    handle.position.z = -0.13;
+    handle.material = crearMaterial(scene, `${id}-wheel-mat`, "#d45b43");
+  } else if (type === "daniel") {
+    const head = MeshBuilder.CreateSphere(`${id}-head`, { diameter: 0.38, segments: 6 }, scene);
+    head.parent = malla;
+    head.position.y = 0.98;
+    head.material = crearMaterial(scene, `${id}-head-mat`, "#c8b298");
+    [-0.25, 0.25].forEach((x, index) => {
+      const arm = MeshBuilder.CreateCylinder(`${id}-arm-${index}`, { height: 0.9, diameter: 0.12, tessellation: 5 }, scene);
+      arm.parent = malla;
+      arm.position.set(x, 0.05, 0);
+      arm.rotation.z = index ? -0.25 : 0.25;
+      arm.material = crearMaterial(scene, `${id}-arm-mat-${index}`, "#4c5c4d");
+    });
+  }
   if (["radioFuse", "transmitter", "document", "serviceDoor", "valve", "finalPanel", "daniel"].includes(type)) {
     const luzFusible = new PointLight(
       `${id}-light`,
@@ -901,8 +1076,8 @@ export function crearRecogible(
       scene,
     );
     luzFusible.diffuse = Color3.FromHexString(type === "valve" ? "#ff9b55" : "#7de4d4");
-    luzFusible.intensity = type === "radioFuse" ? 0.45 : 1.1;
-    luzFusible.range = type === "radioFuse" ? 3.5 : 7;
+    luzFusible.intensity = type === "transmitter" ? 3 : type === "radioFuse" ? 0.45 : 1.1;
+    luzFusible.range = type === "transmitter" ? 18 : type === "radioFuse" ? 3.5 : 7;
   }
   if (type === "card") {
     const luzTarjeta = new PointLight(

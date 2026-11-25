@@ -146,6 +146,7 @@ let gananciaPrincipal = null;
 let gananciaViento = null;
 let gananciaAgua = null;
 let proximoSonidoRio = 0;
+let proximoPasoCriatura = 0;
 const teclasPulsadas = new Set();
 const entradaTactil = {
   forward: 0,
@@ -321,7 +322,9 @@ function actualizarCercano() {
     state.mission.phase === "radio" &&
     Vector3.Distance(jugador.camera.position, puntoEscape) < 4.5;
   masCercano = null;
-  let distancia = 5.5;
+  // Los elementos de misión deben seguir siendo utilizables aunque el bosque
+  // o la geometría del edificio obliguen a acercarse desde un lateral.
+  let distancia = 9;
   const adelante = jugador.camera.getDirection(Vector3.Forward());
   interactuables.forEach((malla) => {
     if (!malla.isDisposed() && malla.isEnabled()) {
@@ -532,12 +535,19 @@ function interactuar() {
     if (!state.inventory.radioFuse) delete state.inventory.radioFuse;
     state.chapter2 = true;
     state.mission.phase = "find-card";
-    escapo = true;
     renderizarInventario(state);
     guardarPartida(state);
-    document.querySelector("#ending-modal").hidden = false;
-    document.querySelector("#objective").textContent =
-      "La radio de emergencia está transmitiendo.";
+    mundo.pickups
+      .filter((recogible) => recogible.metadata.chapter === 2)
+      .forEach((recogible) => recogible.setEnabled(true));
+    jugador.camera.position.set(
+      mundo.stationPoint.x,
+      mundo.stationPoint.y + 1.7,
+      mundo.stationPoint.z + 7,
+    );
+    jugador.camera.rotation.set(0, Math.PI, 0);
+    actualizarObjetivo();
+    mostrarAviso("La radio responde. Capítulo II: entra en la estación de bombeo.");
     return;
   }
   if (
@@ -875,8 +885,39 @@ function actualizarAmbiente() {
     reproducirRuido(0.7, 0.018, 850);
   }
 }
+// Shifts the existing fog and moonlight around the river and industrial site.
+function actualizarAtmosfera() {
+  const posicion = jugador.camera.position;
+  const cercaAgua = Vector3.Distance(posicion, new Vector3(150, 0, -175)) < 52;
+  const cercaEstacion = Vector3.Distance(posicion, mundo.stationPoint) < 38;
+  escena.fogDensity = cercaAgua ? 0.029 : cercaEstacion ? 0.017 : 0.021;
+  escena.fogColor.copyFrom(
+    cercaAgua
+      ? new Color3(0.035, 0.12, 0.13)
+      : cercaEstacion
+        ? new Color3(0.055, 0.12, 0.12)
+        : new Color3(0.045, 0.11, 0.11),
+  );
+  luzCielo.intensity = cercaEstacion ? 0.7 : 0.62;
+  luna.intensity = cercaAgua ? 0.68 : 0.82;
+}
+// Routes creature sounds toward its approximate screen side and fades them by distance.
+function conectarSonidoCriatura(nodo, ganancia, distancia) {
+  const adelante = jugador.camera.getDirection(Vector3.Forward());
+  const lateral = criatura.position.subtract(jugador.camera.position);
+  lateral.y = 0;
+  const longitud = lateral.length() || 1;
+  lateral.scaleInPlace(1 / longitud);
+  const paneo = Math.max(-0.85, Math.min(0.85, adelante.z * lateral.x - adelante.x * lateral.z));
+  ganancia.gain.value *= Math.max(0.18, 1 - distancia / 58);
+  if (contextoAudio.createStereoPanner) {
+    const panner = contextoAudio.createStereoPanner();
+    panner.pan.value = paneo;
+    nodo.connect(ganancia).connect(panner).connect(gananciaPrincipal);
+  } else nodo.connect(ganancia).connect(gananciaPrincipal);
+}
 // Reproduce la señal sonora de la criatura cercana.
-function reproducirSonidoCriatura() {
+function reproducirSonidoCriatura(distancia = 20) {
   if (!contextoAudio) return;
   const oscilador = contextoAudio.createOscillator();
   const ganancia = contextoAudio.createGain();
@@ -888,9 +929,20 @@ function reproducirSonidoCriatura() {
   );
   ganancia.gain.setValueAtTime(0.04, contextoAudio.currentTime);
   ganancia.gain.exponentialRampToValueAtTime(0.001, contextoAudio.currentTime + 0.5);
-  oscilador.connect(ganancia).connect(gananciaPrincipal);
+  conectarSonidoCriatura(oscilador, ganancia, distancia);
   oscilador.start();
   oscilador.stop(contextoAudio.currentTime + 0.52);
+}
+// Gives the primitive creature a readable gait without altering its root mesh.
+function animarCriatura(delta, moviendose) {
+  const { limbs } = criatura.metadata;
+  if (!limbs) return;
+  criatura.metadata.walkPhase += delta * (moviendose ? 9 : 2.3);
+  const balanceo = Math.sin(criatura.metadata.walkPhase) * (moviendose ? 0.62 : 0.08);
+  limbs[0].rotation.z = 0.16 + balanceo;
+  limbs[1].rotation.z = -0.16 - balanceo;
+  limbs[2].rotation.z = -balanceo * 0.58;
+  limbs[3].rotation.z = balanceo * 0.58;
 }
 // Reproduce pasos a la cadencia del movimiento.
 function actualizarPasos(controles) {
@@ -1067,7 +1119,10 @@ function cerrarMapa() {
 // Actualiza la alerta, movimiento y daño de la criatura.
 function actualizarCriatura(delta, controles) {
   const ahora = performance.now();
-  if (criatura.metadata.disabledUntil > ahora) return;
+  if (criatura.metadata.disabledUntil > ahora) {
+    animarCriatura(delta, false);
+    return;
+  }
   if (!criatura.isVisible) {
     criatura.isVisible = true;
     saludCriatura = 3;
@@ -1083,12 +1138,27 @@ function actualizarCriatura(delta, controles) {
     controles.run &&
     (controles.forward || controles.back || controles.left || controles.right) &&
     distancia < 32;
+  if (!criatura.metadata.alerted && ahora >= criatura.metadata.nextAppearance) {
+    const angulo = ahora * 0.00037;
+    const radio = 34 + ((Math.floor(ahora / 1000) % 3) * 5);
+    const x = posicionJugador.x + Math.cos(angulo) * radio;
+    const z = posicionJugador.z + Math.sin(angulo) * radio;
+    criatura.metadata.nextAppearance = ahora + 15000 + Math.random() * 7000;
+    if (mundo.isSafeMonsterPosition(x, z)) {
+      criatura.position.set(x, mundo.alturaTerreno(x, z) + 1.4, z);
+      criatura.rotation.y = Math.atan2(posicionJugador.x - x, posicionJugador.z - z);
+      reproducirSonidoCriatura(radio);
+    } else {
+      criatura.position.copyFrom(criatura.metadata.home);
+    }
+  }
   if (!criatura.metadata.alerted && (corriendoCerca || distancia < 9)) {
     criatura.metadata.alerted = true;
-    reproducirSonidoCriatura();
+    reproducirSonidoCriatura(distancia);
     mostrarAviso("Algo te ha escuchado entre los árboles.");
   }
   if (!criatura.metadata.alerted) return;
+  let caminando = false;
   if (distancia > 1.4) {
     desplazamiento.normalize();
     criatura.position.addInPlace(
@@ -1097,6 +1167,12 @@ function actualizarCriatura(delta, controles) {
     criatura.position.y =
       mundo.alturaTerreno(criatura.position.x, criatura.position.z) + 1.4;
     criatura.rotation.y = Math.atan2(desplazamiento.x, desplazamiento.z);
+    caminando = true;
+  }
+  animarCriatura(delta, caminando);
+  if (caminando && contextoAudio && contextoAudio.currentTime >= proximoPasoCriatura) {
+    proximoPasoCriatura = contextoAudio.currentTime + 0.48;
+    reproducirRuido(0.1, 0.026, 180);
   }
   if (distancia < 2.2) state.health = Math.max(0, state.health - delta * 24);
   if (state.health === 0) {
@@ -1104,6 +1180,7 @@ function actualizarCriatura(delta, controles) {
     jugador.camera.position.set(0, 1.7, -1.5);
     criatura.position.copyFrom(criatura.metadata.home);
     criatura.metadata.alerted = false;
+    criatura.metadata.nextAppearance = ahora + 9000;
     mostrarAviso("La oscuridad te devolvió a la cabaña.");
   }
 }
@@ -1305,6 +1382,7 @@ escena.onBeforeRenderObservable.add(() => {
     state.hunger = Math.max(0, state.hunger - delta * 1.2);
     actualizarPasos(controles);
     actualizarAmbiente();
+    actualizarAtmosfera();
     actualizarCriatura(delta, controles);
     actualizarCercano();
     actualizarMinimapa();

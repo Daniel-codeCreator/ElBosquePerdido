@@ -1,0 +1,21 @@
+EL BOSQUE PERDIDO - REGISTRO DE CAMBIOS
+
+Formato: fecha - estado - cambio.
+
+2026-11-25 - HECHO - Se completaron seis capítulos jugables: cabaña, estación, señales, Valleverde, caverna y rescate de Daniel.
+2026-11-25 - HECHO - Se añadieron guardado local v18 y migración de partidas que terminaban en el antiguo epílogo.
+2026-11-25 - HECHO - Se hicieron visibles e interactuables radio, transmisores, expedientes, entrada de servicio, válvula, Daniel y panel final.
+2026-11-25 - HECHO - Se corrigieron los marcadores de Capítulo V para que puerta, válvula y Daniel no queden dentro del bloque opaco del túnel.
+2026-11-25 - HECHO - Se añadió vegetación con zonas protegidas: árboles, arbustos, rocas y troncos caídos no bloquean los objetivos.
+2026-11-25 - HECHO - Se reemplazaron las copas cónicas por follaje low-poly en capas e irregular para mejorar la silueta de los árboles.
+2026-11-25 - HECHO - Se mejoraron los objetos de misión con detalles visuales reconocibles, conservando su posición y metadatos de interacción.
+2026-11-25 - HECHO - Se mejoró la criatura: extremidades, ojos, animación de marcha, apariciones lejanas seguras y sonidos de pasos.
+2026-11-25 - HECHO - Se añadieron ajustes de niebla y luz para las zonas del río y la estación.
+
+VERIFICACION
+- npm run build finaliza correctamente.
+- La advertencia de Vite sobre el tamaño del paquete no bloquea la compilación.
+
+PENDIENTE
+- Los gráficos son low-poly creados con geometría de Babylon.js; no usan modelos 3D, texturas de alta resolución ni audio externo.
+- Probar manualmente el recorrido completo de los seis capítulos después de cada cambio visual importante.
