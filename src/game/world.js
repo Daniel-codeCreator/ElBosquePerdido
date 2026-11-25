@@ -3,6 +3,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { VertexBuffer } from "@babylonjs/core/Meshes/buffer";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { PointLight } from "@babylonjs/core/Lights/pointLight";
 
 // Crea un material básico con color difuso y brillo opcional.
@@ -110,6 +111,8 @@ export function construirMundo(scene, calidad = "high") {
   crearCasaGrande(scene, obstacles, 90, -165, "hunter lodge");
   crearRio(scene);
   const stationPoint = crearEstacion(scene, obstacles);
+  const townPoint = crearPuebloEvacuado(scene, obstacles);
+  crearTunelServicio(scene, obstacles);
   crearCielo(scene, calidad);
   const escapePoint = crearSalida(scene);
   const creature = crearCriatura(scene);
@@ -122,6 +125,14 @@ export function construirMundo(scene, calidad = "high") {
       "Nota sobre la mesa",
       "Encontraste una nota de Daniel.",
       "La primera noche escuché a alguien gritar mi nombre desde el río. Seguí la voz hasta la niebla... y entonces me respondió desde detrás de mí.\n\nNo sigas mi voz. Si regreso a esta cabaña, busca el vehículo.",
+    ),
+    crearRecogible(
+      scene,
+      "cassette-cabin",
+      "cassette",
+      new Vector3(2.15, 1.16, -0.18),
+      "REPRODUCIR GRABACIÓN DE DANIEL",
+      "",
     ),
   );
   pickups.push(
@@ -312,8 +323,8 @@ export function construirMundo(scene, calidad = "high") {
       scene,
       "fuse-lodge",
       "radioFuse",
-      new Vector3(89, alturaTerreno(89, -165) + 1.1, -165),
-      "Fusible de radio",
+      new Vector3(90, alturaTerreno(90, -171.5) + 0.24, -171.5),
+      "Fusible de radio brillante",
       "Encontraste el fusible de la radio.",
     ),
     crearRecogible(
@@ -343,6 +354,10 @@ export function construirMundo(scene, calidad = "high") {
     ["berries-north-1", "berries", 57, -177, "Frutas silvestres", "Recogiste frutas silvestres."],
     ["battery-north-1", "battery", 72, -181, "Batería abandonada", "Encontraste una batería de linterna."],
     ["ammo-north-1", "ammo", 104, -181, "Cartuchos de emergencia", "Encontraste 3 balas de rifle."],
+    ["ammo-forest-3", "ammo", -118, -135, "Cartuchos bajo un tronco", "Encontraste 3 balas de rifle."],
+    ["ammo-forest-4", "ammo", -142, -151, "Munición olvidada", "Encontraste 3 balas de rifle."],
+    ["ammo-forest-5", "ammo", 38, -92, "Caja de cazador", "Encontraste 3 balas de rifle."],
+    ["ammo-forest-6", "ammo", 82, -128, "Cartuchos secos", "Encontraste 3 balas de rifle."],
     ["medkit-north-1", "medkit", 112, -191, "Botiquín de emergencia", "Encontraste un botiquín."],
     ["berries-station-1", "berries", 119, -185, "Frutas silvestres", "Recogiste frutas silvestres."],
   ];
@@ -365,8 +380,8 @@ export function construirMundo(scene, calidad = "high") {
       scene,
       "station-card",
       "card",
-      new Vector3(137, alturaTerreno(137, -204) + 0.5, -204),
-      "Tarjeta de seguridad",
+      new Vector3(150, alturaTerreno(150, -213) + 0.28, -213),
+      "Tarjeta de seguridad luminosa",
       "Encontraste la tarjeta de acceso.",
     ),
     crearRecogible(
@@ -403,11 +418,11 @@ export function construirMundo(scene, calidad = "high") {
     ),
     crearRecogible(
       scene,
-      "daniel-shelter",
-      "daniel",
+      "station-transmitter",
+      "transmitter",
       new Vector3(150, alturaTerreno(150, -218) + 0.9, -218),
-      "Refugio de Daniel",
-      "Daniel está vivo. La compuerta se abre hacia el exterior.",
+      "Transmisor con la voz de Daniel",
+      "La grabación señala Valleverde: busca primero el hospital.",
     ),
   ];
   // Asigna el capítulo a los objetos de la estación.
@@ -415,11 +430,30 @@ export function construirMundo(scene, calidad = "high") {
     (coleccionable) => (coleccionable.metadata.chapter = 2),
   );
   pickups.push(...coleccionablesEstacion);
+  const objetivosPosteriores = [
+    ["signal-1", "transmitter", 112, -185, "Transmisor entre los pinos", "Una voz imitada intenta alejarte del pueblo."],
+    ["signal-2", "transmitter", 90, -165, "Segundo transmisor", "Otra señal falsa. Daniel pasó por aquí, rumbo a Valleverde."],
+    ["signal-3", "transmitter", -95, -100, "Repetidor de la torre", "La señal auténtica confirma: «Busca el hospital primero.»"],
+    ["hospital-file", "document", -45, -61.5, "Expedientes del hospital", "Los pacientes oían voces bajo el suelo antes de desaparecer."],
+    ["police-file", "document", -68, -61.5, "Informes de la comisaría", "Los apagones y las desapariciones coinciden junto al río."],
+    ["gas-record", "document", -56, -87.5, "Registro de la gasolinera", "Un acceso de servicio bajo el río lleva a la caverna original."],
+    ["cave-entry", "serviceDoor", 178, -161.8, "Entrada de servicio bajo el río", "El túnel conduce a las cámaras de bombeo."],
+    ["cave-valve", "valve", 187, -158, "Válvula de seguridad", "La válvula baja el agua durante un intervalo seguro."],
+    ["daniel-cave", "daniel", 193, -158, "Daniel Ortega", "Daniel está herido, pero consciente. Hay que activar el núcleo de la estación."],
+    ["final-panel", "finalPanel", 150, -200, "Panel final de bombeo", "Las bombas despiertan, las luces sellan la caverna y la compuerta exterior se abre."],
+  ];
+  objetivosPosteriores.forEach(([id, type, x, z, label, message]) => {
+    const offset = ["transmitter", "serviceDoor", "valve", "finalPanel", "daniel"].includes(type) ? 0.85 : 0.42;
+    const objeto = crearRecogible(scene, id, type, new Vector3(x, alturaTerreno(x, z) + offset, z), label, message);
+    objeto.metadata.chapter = type === "transmitter" ? 3 : ["document"].includes(type) ? 4 : type === "finalPanel" ? 6 : 5;
+    pickups.push(objeto);
+  });
   return {
     pickups,
     obstacles,
     alturaTerreno,
     stationPoint,
+    townPoint,
     stairs: escaleras,
     // Calcula la altura de suelo incluidas plataformas y escaleras.
     groundHeight(x, z, upstairs) {
@@ -637,13 +671,28 @@ function crearEstacion(scene, obstacles) {
   roof.position.set(x, base + 5, z + 1);
   roof.material = crearMaterial(scene, "station roof mat", "#141c1d");
   const tunnel = MeshBuilder.CreateBox(
-    "flooded tunnel",
+    "station maintenance floor",
     { width: 7, height: 0.14, depth: 15 },
     scene,
   );
   tunnel.position.set(x, base + 0.17, z - 13);
-  tunnel.material = crearMaterial(scene, "tunnel water", "#0a2c33", "#06343e");
+  tunnel.material = crearMaterial(scene, "station maintenance metal", "#263235", "#0b1314");
   return new Vector3(x, base, z);
+}
+// Construye el acceso exterior a la caverna; no introduce agua en edificios.
+function crearTunelServicio(scene, obstacles) {
+  const x = 186, z = -158, base = alturaTerreno(x, z);
+  const concrete = crearMaterial(scene, "service tunnel concrete", "#364244", "#0b1516");
+  const portal = MeshBuilder.CreateBox("service tunnel portal", { width: 18, height: 4, depth: 7 }, scene);
+  portal.position.set(x, base + 2, z);
+  portal.material = concrete;
+  const opening = MeshBuilder.CreateBox("service tunnel darkness", { width: 8, height: 2.8, depth: 0.15 }, scene);
+  opening.position.set(x, base + 1.6, z - 3.56);
+  opening.material = crearMaterial(scene, "service tunnel dark", "#071012", "#020506");
+  const water = MeshBuilder.CreateGround("cavern water", { width: 9, height: 5 }, scene);
+  water.position.set(194, alturaTerreno(194, -158) + 0.12, -158);
+  water.material = crearMaterial(scene, "cavern water material", "#10454f", "#07313b");
+  obstacles.push({ x: x - 8.8, z, halfX: 0.25, halfZ: 3.5 }, { x: x + 8.8, z, halfX: 0.25, halfZ: 3.5 });
 }
 // Añade la luna y las estrellas según la calidad seleccionada.
 function crearCielo(scene, calidad) {
@@ -725,11 +774,17 @@ export function crearRecogible(
     ammo: ["#b58f39", "#3d2b0b"],
     medkit: ["#d6e3d5", "#a92424"],
     fuse: ["#e2b848", "#534005"],
-    radioFuse: ["#e2b848", "#534005"],
+    radioFuse: ["#ffd65d", "#b87000"],
     industrialFuse: ["#e8c550", "#5c4700"],
     card: ["#5ab8bc", "#103f43"],
     generator: ["#3b4945", "#79e5b4"],
     daniel: ["#c4d5c6", "#24342a"],
+    cassette: ["#293139", "#7de4d4"],
+    transmitter: ["#384d55", "#5de7dc"],
+    document: ["#d9e5d8", "#80cdbd"],
+    serviceDoor: ["#465456", "#7de4d4"],
+    valve: ["#a74837", "#f5a05c"],
+    finalPanel: ["#35484a", "#80ffb1"],
   };
   let malla;
   if (type === "note") {
@@ -777,29 +832,43 @@ export function crearRecogible(
       { width: 0.48, height: 0.3, depth: 0.42 },
       scene,
     );
-  } else if (
-    type === "fuse" ||
-    type === "radioFuse" ||
-    type === "industrialFuse"
-  ) {
+  } else if (type === "cassette") {
+    malla = MeshBuilder.CreateBox(
+      id,
+      { width: 0.82, height: 0.16, depth: 0.52 },
+      scene,
+    );
+  } else if (type === "radioFuse") {
+    malla = MeshBuilder.CreateBox(
+      id,
+      { width: 1.05, height: 0.42, depth: 0.56 },
+      scene,
+    );
+  } else if (type === "fuse" || type === "industrialFuse") {
     malla = MeshBuilder.CreateCylinder(
       id,
-      { height: 0.5, diameter: 0.12, tessellation: 8 },
+      {
+        height: 0.5,
+        diameter: 0.12,
+        tessellation: 8,
+      },
       scene,
     );
     malla.rotation.z = Math.PI / 2;
   } else if (type === "card") {
     malla = MeshBuilder.CreateBox(
       id,
-      { width: 0.5, height: 0.08, depth: 0.34 },
+      { width: 0.9, height: 0.12, depth: 0.58 },
       scene,
     );
-  } else if (type === "generator") {
+  } else if (type === "generator" || type === "finalPanel" || type === "serviceDoor") {
     malla = MeshBuilder.CreateBox(
       id,
       { width: 1.1, height: 1.2, depth: 0.75 },
       scene,
     );
+  } else if (type === "transmitter" || type === "document" || type === "valve") {
+    malla = MeshBuilder.CreateCylinder(id, { height: type === "valve" ? 0.22 : 0.75, diameter: type === "valve" ? 1 : 0.5, tessellation: 10 }, scene);
   } else if (type === "daniel") {
     malla = MeshBuilder.CreateCylinder(
       id,
@@ -825,6 +894,61 @@ export function crearRecogible(
   }
   malla.position = position;
   malla.material = crearMaterial(scene, `${id}-mat`, colores[type][0], colores[type][1]);
+  if (["radioFuse", "transmitter", "document", "serviceDoor", "valve", "finalPanel", "daniel"].includes(type)) {
+    const luzFusible = new PointLight(
+      `${id}-light`,
+      position.add(new Vector3(0, 0.45, 0)),
+      scene,
+    );
+    luzFusible.diffuse = Color3.FromHexString(type === "valve" ? "#ff9b55" : "#7de4d4");
+    luzFusible.intensity = type === "radioFuse" ? 0.45 : 1.1;
+    luzFusible.range = type === "radioFuse" ? 3.5 : 7;
+  }
+  if (type === "card") {
+    const luzTarjeta = new PointLight(
+      `${id}-light`,
+      position.add(new Vector3(0, 0.3, 0)),
+      scene,
+    );
+    luzTarjeta.diffuse = Color3.FromHexString("#5ab8bc");
+    luzTarjeta.intensity = 0.8;
+    luzTarjeta.range = 4;
+  }
   malla.metadata = { id, type, label, message, noteText };
   return malla;
+}
+// Construye el pueblo evacuado lejos del río para futuras investigaciones.
+function crearPuebloEvacuado(scene, obstacles) {
+  const edificios = [
+    [-45, -58, "hospital", "HOSPITAL", "#596b70"],
+    [-68, -58, "police", "COMISARÍA", "#4f5d66"],
+    [-56, -84, "gas station", "GASOLINERA", "#665745"],
+  ];
+  edificios.forEach(([x, z, nombre, letrero, color]) => {
+    const base = alturaTerreno(x, z);
+    const paredMaterial = crearMaterial(scene, `${nombre} walls`, color, "#10191b");
+    const suelo = MeshBuilder.CreateBox(`${nombre} floor`, { width: 13, height: 0.2, depth: 10 }, scene);
+    suelo.position.set(x, base + 0.1, z);
+    suelo.material = paredMaterial;
+    [[-6.3, 0, 0.25, 5], [6.3, 0, 0.25, 5], [0, 4.8, 6.5, 0.25], [-4.4, -4.8, 1.7, 0.25], [4.4, -4.8, 1.7, 0.25]].forEach(([ox, oz, hx, hz], indice) => {
+      const pared = MeshBuilder.CreateBox(`${nombre} wall ${indice}`, { width: hx * 2, height: 3.6, depth: hz * 2 }, scene);
+      pared.position.set(x + ox, base + 1.8, z + oz);
+      pared.material = paredMaterial;
+      obstacles.push({ x: x + ox, z: z + oz, halfX: hx, halfZ: hz });
+    });
+    const techo = MeshBuilder.CreateBox(`${nombre} roof`, { width: 13.4, height: 0.3, depth: 10.4 }, scene);
+    techo.position.set(x, base + 3.75, z);
+    techo.material = crearMaterial(scene, `${nombre} roof material`, "#1a2021");
+    const cartel = MeshBuilder.CreatePlane(`${nombre} sign`, { width: 7.8, height: 1.2 }, scene);
+    cartel.position.set(x, base + 4.55, z - 5.15);
+    const textura = new DynamicTexture(`${nombre} sign texture`, { width: 1024, height: 160 }, scene, false);
+    textura.hasAlpha = true;
+    textura.drawText(letrero, null, 112, "bold 86px Arial", "#d9fff1", "#122222", true);
+    const materialCartel = new StandardMaterial(`${nombre} sign material`, scene);
+    materialCartel.diffuseTexture = textura;
+    materialCartel.emissiveTexture = textura;
+    materialCartel.backFaceCulling = false;
+    cartel.material = materialCartel;
+  });
+  return new Vector3(-56, alturaTerreno(-56, -70), -70);
 }

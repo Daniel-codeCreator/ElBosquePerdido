@@ -20,9 +20,14 @@ import {
   renderizarBitacora,
 } from "./game/inventory.js";
 import {
+  borrarPartida,
   cargarPartida,
   guardarPartida,
 } from "./game/save.js";
+import {
+  obtenerObjetivo,
+  obtenerPuntoObjetivo,
+} from "./game/chapters/index.js";
 
 const lienzo = document.querySelector("#render-canvas");
 const motor = new Engine(lienzo, true, { stencil: true });
@@ -43,23 +48,101 @@ const state = {
   chapter2: false,
   stationPowered: false,
   chapter2Finished: false,
+  chapter3: false,
+  chapter4: false,
+  chapter5: false,
+  chapter6: false,
   mission: { phase: "note-1" },
   settings: { quality: "high", flashlightMode: "wide" },
 };
 const partidaGuardada = cargarPartida();
 if (partidaGuardada) Object.assign(state, partidaGuardada);
+state.inventory ??= {};
+state.collected ??= [];
 state.rifleAmmo ??= 0;
 state.readNotes ??= [];
 state.mission ??= { phase: state.chapter2 ? "find-card" : "note-1" };
+const fasesCapitulo3 = ["signal-1", "signal-2", "signal-3"];
+const fasesCapitulo4 = ["hospital-file", "police-file", "gas-record"];
+const fasesCapitulo5 = ["cave-entry", "cave-valve", "cave-daniel"];
+state.chapter3 ||= fasesCapitulo3.includes(state.mission.phase) || fasesCapitulo4.includes(state.mission.phase) || fasesCapitulo5.includes(state.mission.phase) || ["final-panel", "epilogue"].includes(state.mission.phase);
+state.chapter4 ||= fasesCapitulo4.includes(state.mission.phase) || fasesCapitulo5.includes(state.mission.phase) || ["final-panel", "epilogue"].includes(state.mission.phase);
+state.chapter5 ||= fasesCapitulo5.includes(state.mission.phase) || ["final-panel", "epilogue"].includes(state.mission.phase);
+state.chapter6 ||= ["final-panel", "epilogue"].includes(state.mission.phase);
+// Recupera la siguiente misión si una partida antigua guardó una fase de nota obsoleta.
+function sincronizarMisionNotas() {
+  const notasPrincipales = ["note-1", "note-2", "note-4"];
+  if (!notasPrincipales.includes(state.mission.phase)) return false;
+  const siguienteNota = notasPrincipales.find(
+    (id) => !state.readNotes.includes(id),
+  );
+  const siguienteFase = siguienteNota || "radio-fuse";
+  if (state.mission.phase === siguienteFase) return false;
+  state.mission.phase = siguienteFase;
+  return true;
+}
+// Restaura objetos de misión que se perdieron en guardados anteriores.
+function repararObjetosMision() {
+  let reparado = false;
+  if (
+    !state.chapter2 &&
+    ["radio-fuse", "radio"].includes(state.mission.phase) &&
+    !state.inventory.radioFuse
+  ) {
+    state.mission.phase = "radio-fuse";
+    state.collected = state.collected.filter((id) => id !== "fuse-lodge");
+    reparado = true;
+  }
+  if (
+    state.chapter2 &&
+    !state.stationPowered &&
+    ["find-card", "industrial-fuses", "generator"].includes(state.mission.phase) &&
+    !state.inventory.card
+  ) {
+    const tarjetaOculta = state.collected.includes("station-card");
+    if (state.mission.phase !== "find-card" || tarjetaOculta) {
+      state.mission.phase = "find-card";
+      state.collected = state.collected.filter((id) => id !== "station-card");
+      reparado = true;
+    }
+  }
+  if (state.chapter2 && !state.stationPowered) {
+    const fusibles = ["station-fuse-a", "station-fuse-b", "station-fuse-c"];
+    const cantidadDisponible = state.inventory.industrialFuse || 0;
+    const recogidos = fusibles.filter((id) => state.collected.includes(id));
+    if (recogidos.length > cantidadDisponible) {
+      const conservar = new Set(recogidos.slice(0, cantidadDisponible));
+      state.collected = state.collected.filter(
+        (id) => !fusibles.includes(id) || conservar.has(id),
+      );
+      if (state.mission.phase === "generator") state.mission.phase = "industrial-fuses";
+      reparado = true;
+    }
+  }
+  return reparado;
+}
+const misionSincronizada = sincronizarMisionNotas();
+const objetosReparados = repararObjetosMision();
+if (misionSincronizada || objetosReparados) guardarPartida(state);
+const tieneProgresoGuardado = Boolean(
+  partidaGuardada &&
+    (state.collected.length ||
+      state.readNotes.length ||
+      Object.keys(state.inventory).length ||
+      state.chapter2),
+);
+if (tieneProgresoGuardado) document.querySelector("#intro").classList.add("hidden");
 let masCercano = null;
 let notaAbierta = false;
 let escapo = false;
 let cercaSalida = false;
+let pausado = false;
 let saludCriatura = 3;
 let contextoAudio = null;
 let proximoPaso = 0;
 let ultimoDisparo = 0;
 let destelloHasta = 0;
+let gananciaPrincipal = null;
 let gananciaViento = null;
 let gananciaAgua = null;
 let proximoSonidoRio = 0;
@@ -121,10 +204,20 @@ destelloBoca.intensity = 7;
 destelloBoca.range = 8;
 destelloBoca.setEnabled(false);
 const mundo = construirMundo(escena, state.settings?.quality || "high");
+function capituloDisponible(capitulo) {
+  return capitulo === 2 ? state.chapter2 : Boolean(state[`chapter${capitulo}`]);
+}
+function actualizarObjetosCapitulo() {
+  mundo.pickups
+    .filter((recogible) => recogible.metadata.chapter)
+    .forEach((recogible) => recogible.setEnabled(capituloDisponible(recogible.metadata.chapter)));
+}
 mundo.pickups
-  .filter((recogible) => recogible.metadata.chapter === 2)
-  .forEach((recogible) => recogible.setEnabled(Boolean(state.chapter2)));
-if (state.chapter2 && !state.chapter2Finished)
+  .filter((recogible) => recogible.metadata.chapter)
+  .forEach((recogible) =>
+    recogible.setEnabled(capituloDisponible(recogible.metadata.chapter)),
+  );
+if (state.chapter2 && state.mission.phase !== "epilogue")
   jugador.camera.position.set(
     mundo.stationPoint.x,
     mundo.stationPoint.y + 1.7,
@@ -145,9 +238,23 @@ function mostrarAviso(texto) {
   elemento.classList.add("show");
   setTimeout(() => elemento.classList.remove("show"), 3600);
 }
-const narrativaIntroduccion = "Daniel Ortega desapareció hace tres días mientras investigaba los apagones de la estación de bombeo. Su última transmisión señaló esta cabaña. Encuentra sus pistas, activa la radio del norte y no sigas ninguna voz que salga del río.";
+const grabacionDaniel =
+  "Si encuentras esta grabación, soy Daniel Ortega. Llevo tres días investigando los apagones de la estación de bombeo. La señal me trajo hasta esta cabaña, pero algo en el bosque está usando voces. Encuentra mis pistas, activa la radio al norte y no sigas ninguna voz que salga del río.";
 let caracterIntroduccion = 0;
 let temporizadorEscrituraIntroduccion = null;
+// Reproduce la grabación de voz dejada por Daniel.
+function reproducirGrabacionDaniel() {
+  if (!("speechSynthesis" in window)) {
+    mostrarAviso("Tu navegador no puede reproducir la grabación.");
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const voz = new SpeechSynthesisUtterance(grabacionDaniel);
+  voz.lang = "es-MX";
+  voz.rate = 0.9;
+  voz.pitch = 0.84;
+  window.speechSynthesis.speak(voz);
+}
 // Escribe gradualmente el texto narrativo de introducción.
 function iniciarMaquinaEscribirIntro() {
   const historia = document.querySelector("#intro-story");
@@ -155,8 +262,8 @@ function iniciarMaquinaEscribirIntro() {
   caracterIntroduccion = 0;
   clearInterval(temporizadorEscrituraIntroduccion);
   temporizadorEscrituraIntroduccion = setInterval(() => {
-    historia.textContent += narrativaIntroduccion[caracterIntroduccion++] || "";
-    if (caracterIntroduccion >= narrativaIntroduccion.length) {
+    historia.textContent += grabacionDaniel[caracterIntroduccion++] || "";
+    if (caracterIntroduccion >= grabacionDaniel.length) {
       clearInterval(temporizadorEscrituraIntroduccion);
       document.querySelector("#briefing-continue").hidden = false;
     }
@@ -169,14 +276,7 @@ function iniciarBriefing() {
   introduccion.classList.add("briefing");
   document.querySelector("#start-button").hidden = true;
   iniciarMaquinaEscribirIntro();
-  if ("speechSynthesis" in window) {
-    window.speechSynthesis.cancel();
-    const voz = new SpeechSynthesisUtterance(narrativaIntroduccion);
-    voz.lang = "es-ES";
-    voz.rate = 0.92;
-    voz.pitch = 0.86;
-    window.speechSynthesis.speak(voz);
-  }
+  reproducirGrabacionDaniel();
 }
 // Cierra la introducción y activa el juego.
 function entrarBosque() {
@@ -198,22 +298,8 @@ function cantidadNotas() {
 }
 // Actualiza el texto de la misión según el progreso.
 function actualizarObjetivo() {
-  const objetivos = {
-    "note-1": "Misión 1: lee la nota sobre la mesa de la cabaña.",
-    "note-2": "Misión 2: revisa el vehículo frente a la cabaña.",
-    "note-4": "Misión 3: llega a la casa junto al río y lee la nota de Daniel.",
-    "radio-fuse":
-      "Misión 4: sigue la estrella azul hasta el refugio del cazador y busca el fusible.",
-    radio: "Misión 5: lleva el fusible a la radio de emergencia al norte.",
-    "find-card": "Misión 1: encuentra la tarjeta de seguridad de la estación.",
-    "industrial-fuses": `Misión 2: reúne fusibles industriales (${Math.min(state.inventory.industrialFuse || 0, 3)}/3).`,
-    generator: "Misión 3: activa el panel de generadores.",
-    daniel: "Misión 4: sigue el túnel hasta el refugio de Daniel.",
-    complete: "Capítulo II completado: Daniel está a salvo.",
-  };
   document.querySelector("#objective").textContent =
-    objetivos[state.mission.phase] ||
-    "Explora el bosque y sigue las pistas de Daniel.";
+    obtenerObjetivo(state.mission.phase, state);
 }
 // Muestra el porcentaje actual de batería.
 function actualizarBateria() {
@@ -235,7 +321,7 @@ function actualizarCercano() {
     state.mission.phase === "radio" &&
     Vector3.Distance(jugador.camera.position, puntoEscape) < 4.5;
   masCercano = null;
-  let distancia = 3.2;
+  let distancia = 5.5;
   const adelante = jugador.camera.getDirection(Vector3.Forward());
   interactuables.forEach((malla) => {
     if (!malla.isDisposed() && malla.isEnabled()) {
@@ -243,7 +329,7 @@ function actualizarCercano() {
       const actual = desplazamiento.length();
       if (
         actual < distancia &&
-        Vector3.Dot(adelante, desplazamiento.normalize()) > 0.25
+        Vector3.Dot(adelante, desplazamiento.normalize()) > -0.35
       ) {
         masCercano = malla;
         distancia = actual;
@@ -303,6 +389,7 @@ function mostrarNota(texto, titulo = "Nota de Daniel") {
 // Cierra el lector de notas activo.
 function cerrarNota() {
   notaAbierta = false;
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   document.querySelector("#note-modal").hidden = true;
 }
 // Enciende o apaga la linterna según la batería disponible.
@@ -393,6 +480,23 @@ function reemplazarBateria() {
 function cerrarMochila() {
   document.querySelector("#inventory").classList.remove("open");
 }
+// Detiene o reanuda las actualizaciones del juego.
+function alternarPausa() {
+  pausado = !pausado;
+  if (gananciaPrincipal && contextoAudio) {
+    gananciaPrincipal.gain.setTargetAtTime(
+      pausado ? 0 : 1,
+      contextoAudio.currentTime,
+      0.03,
+    );
+  }
+  teclasPulsadas.clear();
+  Object.keys(entradaTactil).forEach((tecla) => (entradaTactil[tecla] = false));
+  document.querySelector("#pause-button").textContent = pausado
+    ? "CONTINUAR [P]"
+    : "PAUSA [P]";
+  mostrarAviso(pausado ? "Juego en pausa. Pulsa P para continuar." : "Juego reanudado.");
+}
 // Guarda el progreso actual de forma manual.
 function guardarPartidaActual() {
   guardarPartida(state);
@@ -401,31 +505,20 @@ function guardarPartidaActual() {
 // Actualiza la posición del jugador y del objetivo en los mapas.
 function actualizarMinimapa() {
   const limitar = (valor) => Math.max(8, Math.min(92, valor));
-  const izquierda = `${limitar(50 + jugador.camera.position.x * 0.19)}%`;
+  const izquierda = `${limitar(50 - jugador.camera.position.x * 0.19)}%`;
   const arriba = `${limitar(50 + jugador.camera.position.z * 0.19)}%`;
   ["#player-marker", "#world-player-marker"].forEach((selector) => {
     const marcador = document.querySelector(selector);
     marcador.style.left = izquierda;
     marcador.style.top = arriba;
   });
-  const objetivos = {
-    "note-1": new Vector3(1.6, 0, -0.4),
-    "note-2": new Vector3(-1.3, 0, -12),
-    "note-4": new Vector3(29, 0, -132),
-    "radio-fuse": new Vector3(89, 0, -165),
-    radio: new Vector3(0, 0, -210),
-    "find-card": new Vector3(137, 0, -204),
-    "industrial-fuses": new Vector3(140, 0, -197),
-    generator: new Vector3(150, 0, -210),
-    daniel: new Vector3(150, 0, -218),
-  };
-  const objetivo = objetivos[state.mission.phase];
+  const puntoObjetivo = obtenerPuntoObjetivo(state.mission.phase);
   ["#objective-marker", "#world-objective-marker"].forEach((selector) => {
     const marcador = document.querySelector(selector);
-    marcador.hidden = !objetivo;
-    if (objetivo) {
-      marcador.style.left = `${limitar(50 + objetivo.x * 0.19)}%`;
-      marcador.style.top = `${limitar(50 + objetivo.z * 0.19)}%`;
+    marcador.hidden = !puntoObjetivo;
+    if (puntoObjetivo) {
+      marcador.style.left = `${limitar(50 - puntoObjetivo[0] * 0.19)}%`;
+      marcador.style.top = `${limitar(50 + puntoObjetivo[1] * 0.19)}%`;
     }
   });
 }
@@ -447,7 +540,11 @@ function interactuar() {
       "La radio de emergencia está transmitiendo.";
     return;
   }
-  if (!masCercano || (masCercano.metadata.chapter === 2 && !state.chapter2)) return;
+  if (
+    !masCercano ||
+    (masCercano.metadata.chapter === 2 && !state.chapter2)
+  )
+    return;
   const {
     id,
     type: tipo,
@@ -455,6 +552,11 @@ function interactuar() {
     message: mensaje,
     noteText: textoNota,
   } = masCercano.metadata;
+  if (tipo === "cassette") {
+    mostrarNota(grabacionDaniel, "Grabación de Daniel");
+    reproducirGrabacionDaniel();
+    return;
+  }
   if (tipo === "radioFuse" && state.mission.phase !== "radio-fuse")
     return mostrarAviso("Sigue las pistas de Daniel antes de buscar el fusible.");
   if (tipo === "card" && state.mission.phase !== "find-card")
@@ -472,7 +574,7 @@ function interactuar() {
     state.inventory.industrialFuse -= 3;
     if (!state.inventory.industrialFuse) delete state.inventory.industrialFuse;
     state.stationPowered = true;
-    state.mission.phase = "daniel";
+    state.mission.phase = "station-transmitter";
     state.collected.push(id);
     masCercano.dispose();
     masCercano = null;
@@ -481,37 +583,111 @@ function interactuar() {
     guardarPartida(state);
     return mostrarAviso(mensaje);
   }
-  if (tipo === "daniel") {
-    if (!state.stationPowered)
-      return mostrarAviso("El refugio sigue bloqueado. Restablece la energía.");
+  if (tipo === "transmitter") {
+    const siguientes = { "station-transmitter": "signal-1", "signal-1": "signal-2", "signal-2": "signal-3", "signal-3": "hospital-file" };
+    if (id === "station-transmitter" && state.mission.phase !== "station-transmitter")
+      return mostrarAviso("Primero restablece la energía de la estación.");
+    if (id !== "station-transmitter" && state.mission.phase !== id)
+      return mostrarAviso("Esta señal no es la transmisión que estás siguiendo.");
     state.collected.push(id);
     masCercano.dispose();
     masCercano = null;
-    state.chapter2Finished = true;
-    state.mission.phase = "complete";
-    state.journal.push(
-      "Daniel sobrevivió bajo la estación. Juntos abrieron la compuerta hacia la salida.",
-    );
+    state.mission.phase = siguientes[state.mission.phase];
+    if (id === "station-transmitter") {
+      state.chapter2Finished = true;
+      state.chapter3 = true;
+      state.journal.push("El transmisor imitaba a Daniel. La señal auténtica conduce a Valleverde.");
+    }
+    if (id === "signal-3") {
+      state.chapter4 = true;
+      state.journal.push("Daniel investigaba los apagones desde antes de desaparecer. El hospital guarda los expedientes.");
+    }
+    renderizarBitacora(state);
+    actualizarObjetivo();
+    actualizarObjetosCapitulo();
+    guardarPartida(state);
+    return mostrarAviso(mensaje);
+  }
+  if (tipo === "document") {
+    const siguientes = { "hospital-file": "police-file", "police-file": "gas-record", "gas-record": "cave-entry" };
+    if (state.mission.phase !== id) return mostrarAviso("Sigue el orden de los expedientes de Valleverde.");
+    state.collected.push(id);
+    masCercano.dispose();
+    masCercano = null;
+    state.mission.phase = siguientes[id];
+    if (id === "gas-record") {
+      state.chapter5 = true;
+      state.journal.push("El registro revela la entrada de servicio bajo el río.");
+    }
+    state.journal.push(mensaje);
+    renderizarBitacora(state);
+    actualizarObjetivo();
+    actualizarObjetosCapitulo();
+    guardarPartida(state);
+    return mostrarNota(mensaje, etiqueta);
+  }
+  if (tipo === "serviceDoor" || tipo === "valve") {
+    const faseEsperada = tipo === "serviceDoor" ? "cave-entry" : "cave-valve";
+    if (state.mission.phase !== faseEsperada) return mostrarAviso("Aún no tienes la ruta segura hacia este mecanismo.");
+    state.collected.push(id);
+    masCercano.dispose();
+    masCercano = null;
+    state.mission.phase = tipo === "serviceDoor" ? "cave-valve" : "cave-daniel";
+    if (tipo === "valve") state.journal.push("La válvula baja el nivel del agua. Las cámaras profundas quedan accesibles.");
+    actualizarObjetivo();
+    renderizarBitacora(state);
+    guardarPartida(state);
+    return mostrarAviso(mensaje);
+  }
+  if (tipo === "daniel") {
+    if (state.mission.phase !== "cave-daniel") return mostrarAviso("Daniel sigue más adentro, tras la válvula de seguridad.");
+    state.collected.push(id);
+    masCercano.dispose();
+    masCercano = null;
+    state.chapter6 = true;
+    state.mission.phase = "final-panel";
+    state.journal.push("Encontraste a Daniel vivo. Juntos volverán al panel final de la estación.");
+    renderizarBitacora(state);
+    actualizarObjetivo();
+    actualizarObjetosCapitulo();
+    guardarPartida(state);
+    return mostrarNota("Daniel está herido, pero consciente. La luz continua mantiene a la criatura en las cámaras profundas. Activa el panel final de la estación y abre la compuerta exterior.", "Daniel Ortega");
+  }
+  if (tipo === "finalPanel") {
+    if (state.mission.phase !== "final-panel") return mostrarAviso("Daniel debe ayudarte a cerrar el ciclo de bombeo.");
+    state.collected.push(id);
+    masCercano.dispose();
+    masCercano = null;
+    state.mission.phase = "epilogue";
+    escapo = true;
+    state.journal.push("Las bombas, las luces y las compuertas sellan la caverna. Daniel alcanza la carretera contigo.");
     renderizarBitacora(state);
     actualizarObjetivo();
     guardarPartida(state);
-    document.querySelector("#ending-content").innerHTML =
-      "<p>Daniel está a salvo. La estación vuelve a tener energía y la salida está abierta.</p>";
+    document.querySelector("#ending-content").innerHTML = "<p>Al amanecer, una unidad de rescate llega al límite del bosque. Daniel entrega los expedientes: las bombas siguen funcionando y la caverna queda sellada.</p><p>Desde el vehículo, una luz verde se enciende una vez bajo el río. La radio emite estática y, aunque Daniel calla, su voz susurra: «No sigas mi voz.»</p>";
+    document.querySelector("#ending-kicker").textContent = "EPÍLOGO: LA ÚLTIMA SEÑAL";
+    document.querySelector("#restart-game").textContent = "REINICIAR HISTORIA";
     document.querySelector("#next-chapter").hidden = true;
     document.querySelector("#ending-modal").hidden = false;
     return mostrarAviso(mensaje);
   }
   if (tipo === "note") {
     const orden = ["note-1", "note-2", "note-4"];
-    if (!state.readNotes.includes(id)) {
-      state.readNotes.push(id);
-      if (id === state.mission.phase) {
-        state.mission.phase = orden[orden.indexOf(id) + 1] || "radio-fuse";
+    if (id === state.mission.phase) {
+      if (!state.readNotes.includes(id)) {
+        state.readNotes.push(id);
         state.journal.push("La pista confirma tu siguiente destino.");
-        actualizarObjetivo();
-        renderizarBitacora(state);
-        guardarPartida(state);
-      } else mostrarAviso("Esta nota aporta contexto, pero sigue la misión indicada.");
+      }
+      state.mission.phase = orden[orden.indexOf(id) + 1] || "radio-fuse";
+      actualizarObjetivo();
+      renderizarBitacora(state);
+      guardarPartida(state);
+    } else if (!state.readNotes.includes(id)) {
+      state.readNotes.push(id);
+      state.journal.push("Leíste una nota de Daniel.");
+      renderizarBitacora(state);
+      guardarPartida(state);
+      mostrarAviso("Esta nota aporta contexto, pero sigue la misión indicada.");
     }
     return mostrarNota(textoNota, etiqueta);
   }
@@ -561,6 +737,8 @@ function interactuar() {
 // Elimina un objeto del inventario y lo deja en el suelo.
 function descartarObjeto(tipo) {
   if (!state.inventory[tipo]) return;
+  if (["radioFuse", "industrialFuse", "card"].includes(tipo))
+    return mostrarAviso("No puedes tirar un objeto necesario para la misión.");
   const etiqueta =
     tipo === "wood"
       ? "Ramas secas"
@@ -622,21 +800,26 @@ function activarAudio() {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   if (!AudioContext) return;
   contextoAudio ||= new AudioContext();
-  contextoAudio.resume();
+  contextoAudio.resume().catch(() => {});
+  if (!gananciaPrincipal) {
+    gananciaPrincipal = contextoAudio.createGain();
+    gananciaPrincipal.gain.value = pausado ? 0 : 1;
+    gananciaPrincipal.connect(contextoAudio.destination);
+  }
   if (!gananciaViento) {
     const viento = contextoAudio.createOscillator();
     gananciaViento = contextoAudio.createGain();
     viento.type = "sine";
     viento.frequency.value = 47;
     gananciaViento.gain.value = 0.008;
-    viento.connect(gananciaViento).connect(contextoAudio.destination);
+    viento.connect(gananciaViento).connect(gananciaPrincipal);
     viento.start();
     const agua = contextoAudio.createOscillator();
     gananciaAgua = contextoAudio.createGain();
     agua.type = "triangle";
     agua.frequency.value = 92;
     gananciaAgua.gain.value = 0;
-    agua.connect(gananciaAgua).connect(contextoAudio.destination);
+    agua.connect(gananciaAgua).connect(gananciaPrincipal);
     agua.start();
   }
 }
@@ -654,7 +837,7 @@ function reproducirRuido(duracion, volumen, corte) {
   filtro.frequency.value = corte;
   ganancia.gain.setValueAtTime(volumen, contextoAudio.currentTime);
   ganancia.gain.exponentialRampToValueAtTime(0.001, contextoAudio.currentTime + duracion);
-  fuente.connect(filtro).connect(ganancia).connect(contextoAudio.destination);
+  fuente.connect(filtro).connect(ganancia).connect(gananciaPrincipal);
   fuente.start();
 }
 // Reproduce el sonido de encender o apagar la linterna.
@@ -673,7 +856,7 @@ function reproducirSonidoLinterna(activa) {
   );
   ganancia.gain.setValueAtTime(0.035, contextoAudio.currentTime);
   ganancia.gain.exponentialRampToValueAtTime(0.001, contextoAudio.currentTime + 0.1);
-  oscilador.connect(ganancia).connect(contextoAudio.destination);
+  oscilador.connect(ganancia).connect(gananciaPrincipal);
   oscilador.start();
   oscilador.stop(contextoAudio.currentTime + 0.11);
 }
@@ -705,7 +888,7 @@ function reproducirSonidoCriatura() {
   );
   ganancia.gain.setValueAtTime(0.04, contextoAudio.currentTime);
   ganancia.gain.exponentialRampToValueAtTime(0.001, contextoAudio.currentTime + 0.5);
-  oscilador.connect(ganancia).connect(contextoAudio.destination);
+  oscilador.connect(ganancia).connect(gananciaPrincipal);
   oscilador.start();
   oscilador.stop(contextoAudio.currentTime + 0.52);
 }
@@ -715,6 +898,7 @@ function actualizarPasos(controles) {
     controles.forward || controles.back || controles.left || controles.right;
   if (
     !contextoAudio ||
+    contextoAudio.state !== "running" ||
     !moviendo ||
     notaAbierta ||
     escapo ||
@@ -733,7 +917,7 @@ function actualizarPasos(controles) {
     0.001,
     contextoAudio.currentTime + 0.09,
   );
-  oscilador.connect(ganancia).connect(contextoAudio.destination);
+  oscilador.connect(ganancia).connect(gananciaPrincipal);
   oscilador.start();
   oscilador.stop(contextoAudio.currentTime + 0.1);
 }
@@ -748,10 +932,62 @@ function recargarRifle() {
   state.rifleAmmo += cargadas;
   state.inventory.ammo -= cargadas;
   if (!state.inventory.ammo) delete state.inventory.ammo;
+  activarAudio();
+  reproducirSonidoRecarga();
   renderizarInventario(state);
   actualizarIndicadorRifle();
   guardarPartida(state);
   mostrarAviso(`Recargaste ${cargadas} bala${cargadas === 1 ? "" : "s"}.`);
+}
+// Reproduce el sonido mecánico de recargar el rifle.
+function reproducirSonidoRecarga() {
+  if (!contextoAudio) return;
+  [0, 0.12].forEach((retraso, indice) => {
+    const oscilador = contextoAudio.createOscillator();
+    const ganancia = contextoAudio.createGain();
+    oscilador.type = "square";
+    oscilador.frequency.setValueAtTime(
+      indice ? 170 : 250,
+      contextoAudio.currentTime + retraso,
+    );
+    ganancia.gain.setValueAtTime(0.075, contextoAudio.currentTime + retraso);
+    ganancia.gain.exponentialRampToValueAtTime(
+      0.001,
+      contextoAudio.currentTime + retraso + 0.09,
+    );
+    oscilador.connect(ganancia).connect(gananciaPrincipal);
+    oscilador.start(contextoAudio.currentTime + retraso);
+    oscilador.stop(contextoAudio.currentTime + retraso + 0.1);
+  });
+}
+// Ataca a la criatura con el cuchillo cuando está al alcance.
+function usarCuchillo() {
+  if (!state.inventory.knife)
+    return mostrarAviso("Necesitas encontrar el cuchillo de monte.");
+  const ahora = performance.now();
+  if (ahora - ultimoDisparo < 500) return;
+  ultimoDisparo = ahora;
+  activarAudio();
+  reproducirRuido(0.06, 0.08, 1250);
+  const adelante = jugador.camera.getDirection(Vector3.Forward());
+  const objetivo = criatura.position.subtract(jugador.camera.position);
+  const distancia = objetivo.length();
+  if (
+    criatura.isVisible &&
+    distancia < 3.4 &&
+    Vector3.Dot(adelante, objetivo.normalize()) > 0.35
+  ) {
+    saludCriatura--;
+    if (saludCriatura <= 0) {
+      criatura.metadata.disabledUntil = ahora + 18000;
+      criatura.isVisible = false;
+      criatura.metadata.alerted = false;
+      return mostrarAviso("La criatura cayó. Tienes unos segundos.");
+    }
+    criatura.metadata.alerted = true;
+    return mostrarAviso(`Cuchillazo. La criatura resiste (${saludCriatura}/3).`);
+  }
+  mostrarAviso("El cuchillo corta el aire.");
 }
 // Consume un botiquín y recupera salud.
 function usarBotiquin() {
@@ -779,7 +1015,7 @@ function dispararRifle() {
   destelloHasta = ahora + 70;
   activarAudio();
   if (contextoAudio) {
-    reproducirRuido(0.13, 0.13, 1800);
+    reproducirRuido(0.16, 0.22, 2300);
     const oscilador = contextoAudio.createOscillator();
     const ganancia = contextoAudio.createGain();
     oscilador.type = "sawtooth";
@@ -788,12 +1024,12 @@ function dispararRifle() {
       45,
       contextoAudio.currentTime + 0.14,
     );
-    ganancia.gain.setValueAtTime(0.12, contextoAudio.currentTime);
+    ganancia.gain.setValueAtTime(0.2, contextoAudio.currentTime);
     ganancia.gain.exponentialRampToValueAtTime(
       0.001,
       contextoAudio.currentTime + 0.16,
     );
-    oscilador.connect(ganancia).connect(contextoAudio.destination);
+  oscilador.connect(ganancia).connect(gananciaPrincipal);
     oscilador.start();
     oscilador.stop(contextoAudio.currentTime + 0.17);
   }
@@ -881,6 +1117,15 @@ actualizarSignosVitales();
 actualizarBateria();
 actualizarIndicadorRifle();
 actualizarObjetivo();
+if (state.mission.phase === "epilogue") {
+  escapo = true;
+  document.querySelector("#ending-kicker").textContent = "EPÍLOGO: LA ÚLTIMA SEÑAL";
+  document.querySelector("#ending-content").innerHTML =
+    "<p>Al amanecer, una unidad de rescate llega a la carretera. Daniel entrega las notas y asegura que la estación está sellada.</p><p>Desde el vehículo de evacuación, una luz verde se enciende una sola vez bajo el río. La radio emite estática. Daniel está sentado a tu lado cuando su propia voz susurra: «No sigas mi voz.»</p>";
+  document.querySelector("#restart-game").textContent = "REINICIAR HISTORIA";
+  document.querySelector("#next-chapter").hidden = true;
+  document.querySelector("#ending-modal").hidden = false;
+}
 document.querySelector("#start-button").addEventListener("click", iniciarBriefing);
 document.querySelector("#briefing-continue").addEventListener("click", entrarBosque);
 document
@@ -895,6 +1140,7 @@ document
 document
   .querySelector("#backpack-button")
   .addEventListener("click", abrirMochila);
+document.querySelector("#pause-button").addEventListener("click", alternarPausa);
 document
   .querySelector("#close-backpack")
   .addEventListener("click", cerrarMochila);
@@ -917,9 +1163,14 @@ document
     () => (document.querySelector("#battery-modal").hidden = true),
   );
 document.querySelector("#restart-game").addEventListener("click", () => {
+  if (state.mission.phase === "epilogue") {
+    borrarPartida();
+    window.location.reload();
+    return;
+  }
   escapo = false;
   document.querySelector("#ending-modal").hidden = true;
-  if (state.chapter2 && !state.chapter2Finished)
+  if (state.chapter2 && state.mission.phase !== "epilogue")
     jugador.camera.position.set(
       mundo.stationPoint.x,
       mundo.stationPoint.y + 1.7,
@@ -929,6 +1180,7 @@ document.querySelector("#restart-game").addEventListener("click", () => {
   actualizarObjetivo();
 });
 document.querySelector("#next-chapter").addEventListener("click", () => {
+  if (state.mission.phase === "epilogue") return;
   state.chapter2 = true;
   escapo = false;
   document.querySelector("#ending-modal").hidden = true;
@@ -968,14 +1220,20 @@ document.querySelector("#touch-interact").addEventListener("click", interactuar)
   ["#touch-jump", "jump"],
 ].forEach(([selector, key]) => {
   const button = document.querySelector(selector);
-  button.addEventListener("pointerdown", () => (entradaTactil[key] = true));
+  button.addEventListener("pointerdown", () => {
+    activarAudio();
+    entradaTactil[key] = true;
+  });
   ["pointerup", "pointerleave", "pointercancel"].forEach((event) =>
     button.addEventListener(event, () => (entradaTactil[key] = false)),
   );
 });
 document.querySelectorAll("[data-move]").forEach((button) => {
   const key = button.dataset.move;
-  button.addEventListener("pointerdown", () => (entradaTactil[key] = 1));
+  button.addEventListener("pointerdown", () => {
+    activarAudio();
+    entradaTactil[key] = 1;
+  });
   ["pointerup", "pointerleave", "pointercancel"].forEach((event) =>
     button.addEventListener(event, () => (entradaTactil[key] = 0)),
   );
@@ -992,6 +1250,17 @@ window.addEventListener("keydown", (event) => {
     guardarPartidaActual();
     return;
   }
+  if (event.code === "KeyP" && !event.repeat) {
+    alternarPausa();
+    return;
+  }
+  if (pausado) return;
+  if (
+    ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
+      event.code,
+    )
+  )
+    activarAudio();
   teclasPulsadas.add(event.code);
   if (event.code === "Escape") cerrarMapa();
   if (event.code === "KeyE") notaAbierta ? cerrarNota() : interactuar();
@@ -1002,11 +1271,13 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "KeyG" && !notaAbierta && !event.repeat) dispararRifle();
   if (event.code === "KeyR" && !notaAbierta && !event.repeat) recargarRifle();
   if (event.code === "KeyH" && !notaAbierta && !event.repeat) usarBotiquin();
+  if (event.code === "KeyK" && !notaAbierta && !event.repeat) usarCuchillo();
 });
 window.addEventListener("keyup", (event) => teclasPulsadas.delete(event.code));
 window.addEventListener("blur", () => teclasPulsadas.clear());
 escena.onBeforeRenderObservable.add(() => {
   try {
+    if (pausado) return;
     const delta = motor.getDeltaTime() / 1000;
     const controles = estadoEntrada();
     if (!notaAbierta && !escapo) actualizarJugador(jugador, controles, delta, mundo);

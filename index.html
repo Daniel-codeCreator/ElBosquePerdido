@@ -15,11 +15,12 @@
       ><span class="ammo-hud" id="ammo-hud" hidden
         >RIFLE <b id="rifle-ammo">0 / 3</b> ·
         <small id="ammo-reserve">0 RESERVA</small></span
-      ><button id="flashlight-button" class="active">
-        LINTERNA <b id="battery-value">100%</b>
-        <small id="flashlight-mode">CERCA</small></button
-      ><button id="quality-button">CALIDAD: ALTA</button
-      ><button id="backpack-button">MOCHILA [M]</button
+        ><button id="flashlight-button" class="active">
+          LINTERNA <b id="battery-value">100%</b>
+          <small id="flashlight-mode">CERCA</small></button
+        ><button id="quality-button">CALIDAD: ALTA</button
+        ><button id="pause-button">PAUSA [P]</button
+        ><button id="backpack-button">MOCHILA [M]</button
       ><button id="save-button">GUARDAR [CTRL+A]</button>
     </header>
     <section class="vitals" aria-label="Estado de supervivencia">
@@ -55,6 +56,7 @@
         ><i class="map-marker river-marker" title="Río">≈</i
         ><i class="map-marker beacon-marker" title="Radio de emergencia">✦</i
         ><i class="map-marker station-marker" title="Estación de bombeo">▣</i
+        ><i class="map-marker town-marker" title="Pueblo evacuado">▦</i
         ><i class="objective-marker" id="objective-marker" title="Siguiente misión">✦</i
         ><i class="player-marker" id="player-marker"></i>
       </div>
@@ -107,7 +109,7 @@
     </section>
     <section class="note-modal" id="ending-modal" hidden>
       <article>
-        <p>CAPITULO I COMPLETADO</p>
+          <p id="ending-kicker">CAPITULO I COMPLETADO</p>
         <h2>La señal del norte</h2>
         <div id="ending-content">
           <p>
@@ -137,7 +139,8 @@
           ><i class="map-marker house-four-marker" data-label="CAZADOR">⌂</i
           ><i class="map-marker river-marker" data-label="RÍO">≈</i
           ><i class="map-marker beacon-marker" data-label="RADIO">✦</i
-          ><i class="map-marker station-marker" data-label="ESTACIÓN">▣</i
+        ><i class="map-marker station-marker" data-label="ESTACIÓN">▣</i
+        ><i class="map-marker town-marker" data-label="VALLEVERDE">▦</i
           ><i class="objective-marker" id="world-objective-marker">✦</i
           ><i class="player-marker" id="world-player-marker"></i>
         </div>
@@ -156,7 +159,7 @@
       <button id="briefing-continue" hidden>COMENZAR BÚSQUEDA</button>
       <small
         >WASD o flechas para caminar · Ratón para mirar · F linterna · L cambia
-        el haz · E usar · G disparar · R recargar · H botiquín</small
+        el haz · E usar · G disparar · R recargar · K cuchillo · H botiquín · P pausa</small
       >
     </section>
     <script type="module" src="/src/main.js"></script>
