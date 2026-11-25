@@ -420,16 +420,16 @@ export function construirMundo(scene, calidad = "high") {
     obstacles,
     alturaTerreno,
     stationPoint,
-    stairs,
+    stairs: escaleras,
     // Calcula la altura de suelo incluidas plataformas y escaleras.
     groundHeight(x, z, upstairs) {
-      const plataforma = platforms.find(
+      const plataforma = plataformas.find(
         // Encuentra la plataforma que contiene las coordenadas.
         (zona) =>
           Math.abs(x - zona.x) < zona.halfX &&
           Math.abs(z - zona.z) < zona.halfZ,
       );
-      const escalera = stairs.find(
+      const escalera = escaleras.find(
         // Encuentra la escalera que contiene las coordenadas.
         (zona) =>
           Math.abs(x - zona.x) < zona.halfX &&
