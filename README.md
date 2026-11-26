@@ -34,10 +34,12 @@ Prototipo 3D de supervivencia y terror psicológico en primera persona, creado c
 - `E`: recoger objetos, activar paneles, leer o cerrar una nota.
 - `F`: encender y apagar la linterna.
 - `L`: alternar entre haz cercano y haz de largo alcance.
-- `M`: abrir la mochila o el mapa.
+- `M`: abrir o cerrar la mochila.
 - `G`: disparar el rifle.
 - `R`: recargar el rifle.
 - `H`: usar un botiquín.
+- Los botones `USAR` de la mochila consumen vendas, comida, agua, bayas, baterías y cargadores.
+- `E` junto a una fogata: enciende con una leña; una vez encendida permite descansar y calentar una conserva.
 - `K`: usar el cuchillo.
 - `P`: pausar o reanudar la partida.
 - `Esc`: cerrar el mapa o la mochila.
@@ -48,6 +50,8 @@ Prototipo 3D de supervivencia y terror psicológico en primera persona, creado c
 Sigue el objetivo mostrado en pantalla y los marcadores del mapa. Los objetos de misión emiten luz y se activan al acercarte y pulsar `E`.
 
 La historia tiene seis capítulos: la cabaña, la estación de bombeo, las señales falsas, Valleverde, la caverna bajo el río y el rescate de Daniel. El progreso y el inventario se guardan localmente en el navegador.
+
+La supervivencia es deliberadamente suave: la saciedad baja lentamente. Cuando es crítica se bloquea correr y la energía se recupera más despacio; comida, agua, bayas y las fogatas lo resuelven. El receptor de campo (cable + herramienta) y la caja del cazador (llave) son rompecabezas opcionales y no bloquean los seis capítulos.
 
 ## Compilación de producción
 
@@ -65,3 +69,4 @@ La partida se guarda localmente en el navegador mediante `localStorage`. No requ
 
 - [Capítulos actuales y objetivos](./CAPITULOS_ACTUALES.md)
 - [Historia completa](./HISTORIA_DEL_JUEGO.md)
+- [Guía de audio y licencias](./AUDIO_ASSETS.md)

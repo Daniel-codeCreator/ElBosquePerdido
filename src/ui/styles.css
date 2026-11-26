@@ -24,3 +24,4 @@ button { font: inherit; }
 .world-map-grid .station-marker { font-size: 22px; }.world-map-grid .map-marker[data-label]::after { content: attr(data-label); position: absolute; left: 12px; top: -2px; color: #d7e4d8; font: 8px monospace; letter-spacing: .05em; white-space: nowrap; text-shadow: 0 1px 3px #000; }
 .objective-marker { position: absolute; display: grid; place-items: center; transform: translate(-50%, -50%); color: #8dfff1; font: 18px monospace; font-style: normal; text-shadow: 0 0 10px #59f2df; animation: objective-pulse 1.2s ease-in-out infinite; }.world-map-grid .objective-marker { font-size: 28px; }@keyframes objective-pulse { 50% { opacity: .35; transform: translate(-50%, -50%) scale(1.35); } }
 .house-one-marker { left: 55%; }.house-two-marker { left: 44%; }
+.inventory-category { margin: 12px 0 7px !important; color: #d0b57d !important; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }

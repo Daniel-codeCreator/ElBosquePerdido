@@ -176,7 +176,13 @@ export function construirMundo(scene, calidad = "high") {
   crearTunelServicio(scene, obstacles);
   crearCielo(scene, calidad);
   const escapePoint = crearSalida(scene);
-  const creature = crearCriatura(scene);
+   const creature = crearCriatura(scene);
+   const campfires = [
+     crearFogata(scene, "fire-cabin", new Vector3(-7.5, alturaTerreno(-7.5, -5) + 0.12, -5)),
+     crearFogata(scene, "fire-lookout", new Vector3(-88, alturaTerreno(-88, -106) + 0.12, -106)),
+     crearFogata(scene, "fire-station", new Vector3(135, alturaTerreno(135, -189) + 0.12, -189)),
+   ];
+   const echo = crearEco(scene);
   pickups.push(
     crearRecogible(
       scene,
@@ -398,7 +404,7 @@ export function construirMundo(scene, calidad = "high") {
       "El rifle todavía funciona. Guarda los disparos para cuando la cosa esté cerca. Al norte del río está la última señal.\n\nDaniel",
     ),
   );
-  const recursosBosque = [
+   const recursosBosque = [
     ["berries-trail-1", "berries", -18, -28, "Arbusto de moras", "Recogiste frutas silvestres."],
     ["battery-trail-1", "battery", -21, -36, "Batería olvidada", "Encontraste una batería de linterna."],
     ["ammo-trail-1", "ammo", -32, -57, "Cartuchos en una caja", "Encontraste 3 balas de rifle."],
@@ -421,7 +427,25 @@ export function construirMundo(scene, calidad = "high") {
     ["ammo-forest-6", "ammo", 82, -128, "Cartuchos secos", "Encontraste 3 balas de rifle."],
     ["medkit-north-1", "medkit", 112, -191, "Botiquín de emergencia", "Encontraste un botiquín."],
     ["berries-station-1", "berries", 119, -185, "Frutas silvestres", "Recogiste frutas silvestres."],
-  ];
+    ];
+   // Suministros visibles en refugios, mesas y cajas abiertas; no cambian rutas de misión.
+   const suministros = [
+     ["bandage-cabin", "bandage", -2.2, -0.4, "Venda en el botiquín", "Recogiste una venda limpia."],
+     ["food-ranger", "cannedFood", -28, -47.2, "Conserva sobre la mesa", "Recogiste una conserva."],
+     ["water-riverside", "water", 29, -130.8, "Agua embotellada", "Recogiste agua potable."],
+     ["map-lookout", "map", -94, -99.1, "Mapa de rutas", "El mapa marca refugios y una frecuencia."],
+     ["tool-lookout", "tool", -92.5, -100, "Herramienta multiuso", "Recogiste una herramienta multiuso."],
+     ["cable-station", "cable", 137, -194, "Cable de cobre", "Recogiste un cable de cobre."],
+     ["key-hunter", "key", 89, -164.2, "Llave de caja", "Recogiste una llave de caja."],
+     ["magazine-station", "ammoMagazine", 143, -196, "Cargador sellado", "Recogiste un cargador con tres cartuchos."],
+     ["lore-ranger", "loreDocument", -28, -49.1, "Informe de guardabosques", "Registro guardado.", "El guardabosques anotó que la luz del fuego desviaba a la voz, pero nunca la apagaba del todo."],
+     ["lore-town", "loreDocument", -45, -60.1, "Transcripción de radio", "Registro guardado.", "Frecuencia 106.4: dos voces de Daniel respondieron al mismo tiempo. Una pidió ayuda; la otra pidió silencio."],
+   ];
+   suministros.forEach(([id, type, x, z, label, message, noteText]) => pickups.push(crearRecogible(scene, id, type, new Vector3(x, alturaTerreno(x, z) + 0.52, z), label, message, noteText)));
+   pickups.push(
+     crearRecogible(scene, "field-receiver", "receiver", new Vector3(-84, alturaTerreno(-84, -108) + 0.7, -108), "Receptor de campo averiado", "El receptor vuelve a emitir una frecuencia baja."),
+     crearRecogible(scene, "hunter-crate", "supplyCrate", new Vector3(96, alturaTerreno(96, -162) + 0.55, -162), "Caja de suministros cerrada", "La caja contiene provisiones."),
+   );
   // Crea los recursos distribuidos por el bosque.
   recursosBosque.forEach(([id, type, x, z, label, message]) => {
     const altura = type === "berries" ? 0.5 : 0.42;
@@ -513,6 +537,8 @@ export function construirMundo(scene, calidad = "high") {
   });
   return {
     pickups,
+    campfires,
+    echo,
     obstacles,
     alturaTerreno,
     stationPoint,
@@ -864,6 +890,37 @@ function crearCriatura(scene) {
   };
   return creature;
 }
+// Fogatas fijas, colocadas fuera de objetivos y con luz que se activa desde la lógica.
+function crearFogata(scene, id, position) {
+  const root = MeshBuilder.CreateCylinder(id, { height: 0.18, diameter: 1.35, tessellation: 9 }, scene);
+  root.position.copyFrom(position);
+  root.material = crearMaterial(scene, `${id}-stones`, "#4c5148");
+  const ember = MeshBuilder.CreateSphere(`${id}-embers`, { diameter: 0.55, segments: 6 }, scene);
+  ember.parent = root;
+  ember.position.y = 0.22;
+  ember.material = crearMaterial(scene, `${id}-embers-mat`, "#31130a", "#120401");
+  const flame = MeshBuilder.CreateSphere(`${id}-flame`, { diameter: 0.55, segments: 5 }, scene);
+  flame.parent = root;
+  flame.position.y = 0.52;
+  flame.scaling.y = 1.5;
+  flame.material = crearMaterial(scene, `${id}-flame-mat`, "#ff7b25", "#ff5b16");
+  flame.setEnabled(false);
+  const light = new PointLight(`${id}-light`, position.add(new Vector3(0, 1.1, 0)), scene);
+  light.diffuse = Color3.FromHexString("#ff9d4d");
+  light.range = 15;
+  light.intensity = 0;
+  root.metadata = { id, type: "campfire", label: "ENCENDER FOGATA (1 LEÑA)", flame, light };
+  return root;
+}
+// El Eco es lento y visualmente distinto; la IA decide cuándo puede manifestarse.
+function crearEco(scene) {
+  const echo = MeshBuilder.CreateBox("the echo", { width: 0.8, height: 2.35, depth: 0.28 }, scene);
+  echo.position.set(-130, alturaTerreno(-130, -130) + 1.15, -130);
+  echo.material = crearMaterial(scene, "echo material", "#29324d", "#253154");
+  echo.isVisible = false;
+  echo.metadata = { home: echo.position.clone(), nextMove: 0, nextAttack: 0 };
+  return echo;
+}
 // Crea un objeto coleccionable con su forma, color y metadatos.
 export function crearRecogible(
   scene,
@@ -883,6 +940,17 @@ export function crearRecogible(
     rifle: ["#4a3321", "#17120e"],
     ammo: ["#b58f39", "#3d2b0b"],
     medkit: ["#d6e3d5", "#a92424"],
+    bandage: ["#ded7c0", "#7a6b4c"],
+    cannedFood: ["#71846b", "#2e3e2e"],
+    water: ["#79baca", "#23657a"],
+    ammoMagazine: ["#6c5840", "#be9a4a"],
+    key: ["#baa34d", "#75611f"],
+    map: ["#d7c797", "#75633b"],
+    tool: ["#aab7b0", "#3d4b47"],
+    cable: ["#bd7438", "#5e2d17"],
+    loreDocument: ["#d9e5d8", "#80cdbd"],
+    receiver: ["#42585a", "#9ee9dd"],
+    supplyCrate: ["#69492a", "#b99851"],
     fuse: ["#e2b848", "#534005"],
     radioFuse: ["#ffd65d", "#b87000"],
     industrialFuse: ["#e8c550", "#5c4700"],

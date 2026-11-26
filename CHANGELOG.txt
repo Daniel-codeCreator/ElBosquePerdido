@@ -11,11 +11,17 @@ Formato: fecha - estado - cambio.
 2026-11-25 - HECHO - Se mejoraron los objetos de misión con detalles visuales reconocibles, conservando su posición y metadatos de interacción.
 2026-11-25 - HECHO - Se mejoró la criatura: extremidades, ojos, animación de marcha, apariciones lejanas seguras y sonidos de pasos.
 2026-11-25 - HECHO - Se añadieron ajustes de niebla y luz para las zonas del río y la estación.
+2026-11-26 - HECHO - Se actualizó el guardado a v19 con lectura compatible de partidas v18/v17; persiste fogatas y rompecabezas opcionales.
+2026-11-26 - HECHO - Se ampliaron inventario, categorías y consumibles: vendas, conservas, agua, cargadores, llave, mapa, herramienta, cable y documentos de lore.
+2026-11-26 - HECHO - Se añadieron fogatas seguras persistentes con leña, descanso, cocción de conservas, luz y reacción defensiva de la criatura.
+2026-11-26 - HECHO - Se suavizó el hambre y se añadieron efectos críticos legibles sobre carrera y recuperación de energía.
+2026-11-26 - HECHO - La criatura principal usa estados patrulla, sospecha, persecución y búsqueda; el Eco aparece desde el capítulo IV y se inmoviliza ante luz.
+2026-11-26 - HECHO - Se añadió audio procedural centralizado por categorías y documentación de la limitación de medios externos.
 
 VERIFICACION
 - npm run build finaliza correctamente.
 - La advertencia de Vite sobre el tamaño del paquete no bloquea la compilación.
 
 PENDIENTE
-- Los gráficos son low-poly creados con geometría de Babylon.js; no usan modelos 3D, texturas de alta resolución ni audio externo.
+- Los gráficos son low-poly creados con geometría de Babylon.js. El audio actual es procedural Web Audio: para sonido o modelos reales aún hacen falta medios externos verificados y con licencia, descritos en AUDIO_ASSETS.md.
 - Probar manualmente el recorrido completo de los seis capítulos después de cada cambio visual importante.

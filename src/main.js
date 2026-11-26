@@ -54,6 +54,9 @@ const state = {
   chapter6: false,
   mission: { phase: "note-1" },
   settings: { quality: "high", flashlightMode: "wide" },
+  fires: {},
+  receiverRepaired: false,
+  crateUnlocked: false,
 };
 const partidaGuardada = cargarPartida();
 if (partidaGuardada) Object.assign(state, partidaGuardada);
@@ -61,6 +64,10 @@ state.inventory ??= {};
 state.collected ??= [];
 state.rifleAmmo ??= 0;
 state.readNotes ??= [];
+state.documents ??= [];
+state.fires ??= {};
+state.settings ??= { quality: "high", flashlightMode: "wide" };
+state.settings.audio ??= { master: 1, effects: 1, ambient: 1, music: 1 };
 state.mission ??= { phase: state.chapter2 ? "find-card" : "note-1" };
 const fasesCapitulo3 = ["signal-1", "signal-2", "signal-3"];
 const fasesCapitulo4 = ["hospital-file", "police-file", "gas-record"];
@@ -145,8 +152,10 @@ let destelloHasta = 0;
 let gananciaPrincipal = null;
 let gananciaViento = null;
 let gananciaAgua = null;
+const gananciasAudio = {};
 let proximoSonidoRio = 0;
 let proximoPasoCriatura = 0;
+let ultimoAvisoHambre = 0;
 const teclasPulsadas = new Set();
 const entradaTactil = {
   forward: 0,
@@ -224,10 +233,12 @@ if (state.chapter2 && state.mission.phase !== "epilogue")
     mundo.stationPoint.y + 1.7,
     mundo.stationPoint.z + 7,
   );
-const { creature: criatura, escapePoint: puntoEscape } = mundo;
+const { creature: criatura, echo, escapePoint: puntoEscape } = mundo;
 const interactuables = mundo.pickups.filter(
   (malla) => !state.collected.includes(malla.metadata.id),
 );
+mundo.campfires.forEach((fogata) => interactuables.push(fogata));
+mundo.campfires.forEach((fogata) => actualizarFogataVisual(fogata));
 mundo.pickups
   .filter((malla) => state.collected.includes(malla.metadata.id))
   .forEach((malla) => malla.dispose());
@@ -293,6 +304,42 @@ function actualizarSignosVitales() {
       (document.querySelector(`#${key}-bar`).style.width = `${state[key]}%`),
   );
 }
+function consumirObjeto(tipo, cantidad = 1) {
+  if ((state.inventory[tipo] || 0) < cantidad) return false;
+  state.inventory[tipo] -= cantidad;
+  if (!state.inventory[tipo]) delete state.inventory[tipo];
+  return true;
+}
+// Aplica consumibles desde mochila sin convertir la supervivencia en una penalización constante.
+function usarConsumible(tipo) {
+  const efectos = {
+    medkit: ["health", 55, "Usaste un botiquín."],
+    bandage: ["health", 25, "Vendaste la herida."],
+    cannedFood: ["hunger", 30, "Comiste una conserva."],
+    water: ["hunger", 24, "Bebiste agua potable."],
+    berries: ["hunger", 18, "Comiste frutas silvestres."],
+  };
+  if (tipo === "battery") return reemplazarBateria();
+  if (tipo === "ammoMagazine") {
+    if (!consumirObjeto(tipo)) return;
+    state.inventory.ammo = (state.inventory.ammo || 0) + 3;
+    mostrarAviso("Abriste el cargador: 3 cartuchos a reserva.");
+  } else if (tipo === "map") {
+    mostrarNota("Rutas seguras: cabaña, torre, refugio del cazador y estación. Una anotación menciona el receptor de campo: cable + herramienta.", "Mapa de rutas");
+    return;
+  } else {
+    const efecto = efectos[tipo];
+    if (!efecto || !consumirObjeto(tipo)) return;
+    state[efecto[0]] = Math.min(100, state[efecto[0]] + efecto[1]);
+    mostrarAviso(efecto[2]);
+  }
+  activarAudio();
+  reproducirTono("effects", 360, 0.07, 0.045);
+  renderizarInventario(state);
+  actualizarSignosVitales();
+  actualizarIndicadorRifle();
+  guardarPartida(state);
+}
 // Devuelve cuántas notas ha leído el jugador.
 function cantidadNotas() {
   return state.readNotes.length;
@@ -340,10 +387,10 @@ function actualizarCercano() {
     }
   });
   const aviso = document.querySelector("#interaction");
-  aviso.textContent = cercaSalida
+   aviso.textContent = cercaSalida
     ? "[E] ACTIVAR RADIO DE EMERGENCIA"
     : masCercano
-      ? `[E] ${masCercano.metadata.label}`
+       ? `[E] ${masCercano.metadata.type === "campfire" && state.fires[masCercano.metadata.id] ? "DESCANSAR / COCINAR EN FOGATA" : masCercano.metadata.label}`
       : "";
   aviso.classList.toggle("show", cercaSalida || Boolean(masCercano));
 }
@@ -457,6 +504,10 @@ function alternarCalidad() {
 function abrirMochila() {
   document.querySelector("#inventory").classList.add("open");
 }
+// La misma tecla abre y cierra la mochila.
+function alternarMochila() {
+  document.querySelector("#inventory").classList.toggle("open");
+}
 // Pregunta si se desea reemplazar una batería agotada.
 function mostrarAvisoBateria() {
   const modal = document.querySelector("#battery-modal");
@@ -562,6 +613,56 @@ function interactuar() {
     message: mensaje,
     noteText: textoNota,
   } = masCercano.metadata;
+  if (tipo === "campfire") {
+    if (!state.fires[id]) {
+      if (!consumirObjeto("wood")) return mostrarAviso("Necesitas 1 leña para encender esta fogata.");
+      state.fires[id] = true;
+      actualizarFogataVisual(masCercano);
+      renderizarInventario(state);
+      guardarPartida(state);
+      activarAudio();
+      reproducirRuido(0.18, 0.05, 650);
+      return mostrarAviso("La fogata ilumina el refugio. La criatura evita su luz.");
+    }
+    state.energy = Math.min(100, state.energy + 24);
+    state.health = Math.min(100, state.health + 8);
+    if (consumirObjeto("cannedFood")) {
+      state.hunger = Math.min(100, state.hunger + 52);
+      mostrarAviso("Descansaste y calentaste una conserva.");
+    } else mostrarAviso("Descansaste al calor de la fogata.");
+    renderizarInventario(state);
+    actualizarSignosVitales();
+    guardarPartida(state);
+    return;
+  }
+  if (tipo === "loreDocument") {
+    state.collected.push(id);
+    state.documents.push({ id, title: etiqueta, text: textoNota });
+    agregarObjeto(state, "note");
+    state.journal.push(`Archivaste: ${etiqueta}.`);
+    masCercano.dispose(); masCercano = null;
+    renderizarInventario(state); renderizarBitacora(state); guardarPartida(state);
+    return mostrarNota(textoNota, etiqueta);
+  }
+  if (tipo === "receiver") {
+    if (state.receiverRepaired) return mostrarAviso("El receptor ya emite la frecuencia anotada en el mapa.");
+    if (!state.inventory.tool || !state.inventory.cable) return mostrarAviso("Falta conectar cable y ajustar la carcasa: necesitas cable + herramienta.");
+    consumirObjeto("tool");
+    consumirObjeto("cable");
+    state.receiverRepaired = true;
+    state.journal.push("Reparaste el receptor: la frecuencia repite una coordenada que coincide con la torre.");
+    renderizarInventario(state); renderizarBitacora(state); guardarPartida(state);
+    activarAudio(); reproducirTono("effects", 520, 0.18, 0.06);
+    return mostrarAviso("Receptor reparado. La señal aclara una pista opcional.");
+  }
+  if (tipo === "supplyCrate") {
+    if (state.crateUnlocked) return mostrarAviso("La caja de suministros ya está vacía.");
+    if (!consumirObjeto("key")) return mostrarAviso("La caja tiene una cerradura simple: busca su llave en el refugio.");
+    state.crateUnlocked = true;
+    agregarObjeto(state, "cannedFood", 2); agregarObjeto(state, "bandage", 2); agregarObjeto(state, "ammoMagazine");
+    renderizarInventario(state); guardarPartida(state);
+    return mostrarAviso("Abriste la caja: conserva, vendas y un cargador.");
+  }
   if (tipo === "cassette") {
     mostrarNota(grabacionDaniel, "Grabación de Daniel");
     reproducirGrabacionDaniel();
@@ -701,15 +802,6 @@ function interactuar() {
     }
     return mostrarNota(textoNota, etiqueta);
   }
-  if (tipo === "berries") {
-    state.hunger = Math.min(100, state.hunger + 28);
-    state.collected.push(id);
-    masCercano.dispose();
-    masCercano = null;
-    actualizarSignosVitales();
-    guardarPartida(state);
-    return mostrarAviso("Comiste frutas silvestres. Recuperaste saciedad.");
-  }
   if (tipo === "battery" && state.battery <= 0) {
     state.battery = 100;
     configurarLinterna(true);
@@ -721,13 +813,13 @@ function interactuar() {
     actualizarBateria();
     return mostrarAviso("Instalaste la batería y encendiste la linterna.");
   }
-  const cantidad = tipo === "ammo" ? (state.inventory.ammo ? 0 : 1) : 1;
+   const cantidad = tipo === "ammo" ? (state.inventory.ammo ? 0 : 1) : 1;
   if (pesoInventario(state) + cantidad > 12)
     return mostrarAviso("La mochila está llena. No puedes cargar más objetos.");
   if (tipo === "rifle") {
     agregarObjeto(state, "rifle");
     state.rifleAmmo = 3;
-  } else agregarObjeto(state, tipo, tipo === "ammo" ? 3 : 1);
+   } else agregarObjeto(state, tipo, tipo === "ammo" ? 3 : 1);
   if (tipo === "radioFuse") state.mission.phase = "radio";
   if (tipo === "card") state.mission.phase = "industrial-fuses";
   if (tipo === "industrialFuse" && (state.inventory.industrialFuse || 0) >= 3)
@@ -740,14 +832,16 @@ function interactuar() {
   renderizarBitacora(state);
   actualizarIndicadorRifle();
   guardarPartida(state);
-  mostrarAviso(
+   activarAudio();
+   reproducirTono("effects", 580, 0.06, 0.04);
+   mostrarAviso(
     tipo === "rifle" ? "Encontraste el rifle con 3 balas cargadas." : mensaje,
   );
 }
 // Elimina un objeto del inventario y lo deja en el suelo.
 function descartarObjeto(tipo) {
   if (!state.inventory[tipo]) return;
-  if (["radioFuse", "industrialFuse", "card"].includes(tipo))
+  if (["radioFuse", "industrialFuse", "card", "key", "tool", "cable"].includes(tipo))
     return mostrarAviso("No puedes tirar un objeto necesario para la misión.");
   const etiqueta =
     tipo === "wood"
@@ -813,8 +907,14 @@ function activarAudio() {
   contextoAudio.resume().catch(() => {});
   if (!gananciaPrincipal) {
     gananciaPrincipal = contextoAudio.createGain();
-    gananciaPrincipal.gain.value = pausado ? 0 : 1;
-    gananciaPrincipal.connect(contextoAudio.destination);
+     gananciaPrincipal.gain.value = pausado ? 0 : state.settings.audio.master;
+     gananciaPrincipal.connect(contextoAudio.destination);
+     ["effects", "ambient", "music"].forEach((categoria) => {
+       const gain = contextoAudio.createGain();
+       gain.gain.value = state.settings.audio[categoria];
+       gain.connect(gananciaPrincipal);
+       gananciasAudio[categoria] = gain;
+     });
   }
   if (!gananciaViento) {
     const viento = contextoAudio.createOscillator();
@@ -822,16 +922,28 @@ function activarAudio() {
     viento.type = "sine";
     viento.frequency.value = 47;
     gananciaViento.gain.value = 0.008;
-    viento.connect(gananciaViento).connect(gananciaPrincipal);
+     viento.connect(gananciaViento).connect(gananciasAudio.ambient);
     viento.start();
     const agua = contextoAudio.createOscillator();
     gananciaAgua = contextoAudio.createGain();
     agua.type = "triangle";
     agua.frequency.value = 92;
     gananciaAgua.gain.value = 0;
-    agua.connect(gananciaAgua).connect(gananciaPrincipal);
+     agua.connect(gananciaAgua).connect(gananciasAudio.ambient);
     agua.start();
   }
+}
+// Punto único para tonos UI, interacción y señales; no depende de archivos externos.
+function reproducirTono(categoria, frecuencia, duracion, volumen) {
+  if (!contextoAudio || !gananciasAudio[categoria]) return;
+  const oscilador = contextoAudio.createOscillator();
+  const ganancia = contextoAudio.createGain();
+  oscilador.type = "triangle";
+  oscilador.frequency.value = frecuencia;
+  ganancia.gain.setValueAtTime(volumen, contextoAudio.currentTime);
+  ganancia.gain.exponentialRampToValueAtTime(0.001, contextoAudio.currentTime + duracion);
+  oscilador.connect(ganancia).connect(gananciasAudio[categoria]);
+  oscilador.start(); oscilador.stop(contextoAudio.currentTime + duracion);
 }
 // Reproduce un ruido breve filtrado con Web Audio.
 function reproducirRuido(duracion, volumen, corte) {
@@ -847,7 +959,7 @@ function reproducirRuido(duracion, volumen, corte) {
   filtro.frequency.value = corte;
   ganancia.gain.setValueAtTime(volumen, contextoAudio.currentTime);
   ganancia.gain.exponentialRampToValueAtTime(0.001, contextoAudio.currentTime + duracion);
-  fuente.connect(filtro).connect(ganancia).connect(gananciaPrincipal);
+   fuente.connect(filtro).connect(ganancia).connect(gananciasAudio.effects || gananciaPrincipal);
   fuente.start();
 }
 // Reproduce el sonido de encender o apagar la linterna.
@@ -866,7 +978,7 @@ function reproducirSonidoLinterna(activa) {
   );
   ganancia.gain.setValueAtTime(0.035, contextoAudio.currentTime);
   ganancia.gain.exponentialRampToValueAtTime(0.001, contextoAudio.currentTime + 0.1);
-  oscilador.connect(ganancia).connect(gananciaPrincipal);
+   oscilador.connect(ganancia).connect(gananciasAudio.effects || gananciaPrincipal);
   oscilador.start();
   oscilador.stop(contextoAudio.currentTime + 0.11);
 }
@@ -1043,15 +1155,7 @@ function usarCuchillo() {
 }
 // Consume un botiquín y recupera salud.
 function usarBotiquin() {
-  if (!state.inventory.medkit) return;
-  if (state.health >= 100) return mostrarAviso("Tu salud ya está completa.");
-  state.inventory.medkit--;
-  if (!state.inventory.medkit) delete state.inventory.medkit;
-  state.health = Math.min(100, state.health + 55);
-  renderizarInventario(state);
-  actualizarSignosVitales();
-  guardarPartida(state);
-  mostrarAviso("Usaste un botiquín.");
+  usarConsumible("medkit");
 }
 // Dispara el rifle y ahuyenta a la criatura si está cerca.
 function dispararRifle() {
@@ -1116,7 +1220,15 @@ function abrirMapa() {
 function cerrarMapa() {
   document.querySelector("#world-map").hidden = true;
 }
-// Actualiza la alerta, movimiento y daño de la criatura.
+function actualizarFogataVisual(fogata) {
+  const encendida = Boolean(state.fires[fogata.metadata.id]);
+  fogata.metadata.flame.setEnabled(encendida);
+  fogata.metadata.light.intensity = encendida ? 2.6 : 0;
+}
+function cercaFogataEncendida(posicion, radio = 16) {
+  return mundo.campfires.some((fogata) => state.fires[fogata.metadata.id] && Vector3.Distance(posicion, fogata.position) < radio);
+}
+// Actualiza la alerta, movimiento y daño de la criatura mediante estados explícitos.
 function actualizarCriatura(delta, controles) {
   const ahora = performance.now();
   if (criatura.metadata.disabledUntil > ahora) {
@@ -1138,7 +1250,15 @@ function actualizarCriatura(delta, controles) {
     controles.run &&
     (controles.forward || controles.back || controles.left || controles.right) &&
     distancia < 32;
-  if (!criatura.metadata.alerted && ahora >= criatura.metadata.nextAppearance) {
+   const miraCriatura = distancia < 24 && Vector3.Dot(jugador.camera.getDirection(Vector3.Forward()), desplazamiento.normalize()) > 0.55;
+   const ruido = controles.run && (controles.forward || controles.back || controles.left || controles.right);
+   const luzFuego = cercaFogataEncendida(posicionJugador, 18);
+   if (luzFuego) criatura.metadata.state = "search";
+   else if (distancia < 8 || ruido && distancia < 32) criatura.metadata.state = "chase";
+   else if (miraCriatura || distancia < 18) criatura.metadata.state = "suspicious";
+   else criatura.metadata.state ??= "patrol";
+   criatura.metadata.alerted = ["suspicious", "chase"].includes(criatura.metadata.state);
+   if (criatura.metadata.state === "patrol" && ahora >= criatura.metadata.nextAppearance) {
     const angulo = ahora * 0.00037;
     const radio = 34 + ((Math.floor(ahora / 1000) % 3) * 5);
     const x = posicionJugador.x + Math.cos(angulo) * radio;
@@ -1152,14 +1272,19 @@ function actualizarCriatura(delta, controles) {
       criatura.position.copyFrom(criatura.metadata.home);
     }
   }
-  if (!criatura.metadata.alerted && (corriendoCerca || distancia < 9)) {
-    criatura.metadata.alerted = true;
+   if (criatura.metadata.state === "suspicious" && (corriendoCerca || distancia < 9)) {
+     criatura.metadata.state = "chase";
+     criatura.metadata.alerted = true;
     reproducirSonidoCriatura(distancia);
     mostrarAviso("Algo te ha escuchado entre los árboles.");
   }
-  if (!criatura.metadata.alerted) return;
+   if (criatura.metadata.state === "patrol") return;
   let caminando = false;
-  if (distancia > 1.4) {
+   if (criatura.metadata.state === "search") {
+     const regreso = criatura.metadata.home.subtract(criatura.position); regreso.y = 0;
+     if (regreso.length() < 2) criatura.metadata.state = "patrol";
+     else criatura.position.addInPlace(regreso.normalize().scale(delta * 1.2));
+   } else if (distancia > 1.4) {
     desplazamiento.normalize();
     criatura.position.addInPlace(
       desplazamiento.scale(Math.min(distancia - 1.4, delta * 2.65)),
@@ -1174,7 +1299,7 @@ function actualizarCriatura(delta, controles) {
     proximoPasoCriatura = contextoAudio.currentTime + 0.48;
     reproducirRuido(0.1, 0.026, 180);
   }
-  if (distancia < 2.2) state.health = Math.max(0, state.health - delta * 24);
+   if (criatura.metadata.state === "chase" && distancia < 2.2) state.health = Math.max(0, state.health - delta * 24);
   if (state.health === 0) {
     state.health = 100;
     jugador.camera.position.set(0, 1.7, -1.5);
@@ -1182,6 +1307,27 @@ function actualizarCriatura(delta, controles) {
     criatura.metadata.alerted = false;
     criatura.metadata.nextAppearance = ahora + 9000;
     mostrarAviso("La oscuridad te devolvió a la cabaña.");
+  }
+}
+// Aparición secundaria posterior al capítulo IV: lenta, visible y vulnerable a luz cercana.
+function actualizarEco(delta) {
+  if (!state.chapter4 || escapo) return;
+  const distancia = Vector3.Distance(echo.position, jugador.camera.position);
+  const iluminado = state.flashlight || cercaFogataEncendida(jugador.camera.position, 13);
+  if (!echo.isVisible && distancia < 42 && !iluminado) {
+    echo.isVisible = true;
+    echo.position.copyFrom(jugador.camera.position.add(new Vector3(12, 0, 9)));
+    echo.position.y = mundo.alturaTerreno(echo.position.x, echo.position.z) + 1.15;
+    mostrarAviso("Una silueta azul permanece entre los edificios. La luz la inmoviliza.");
+  }
+  if (!echo.isVisible) return;
+  if (iluminado) return;
+  const hacia = jugador.camera.position.subtract(echo.position); hacia.y = 0;
+  if (hacia.length() > 2.8) echo.position.addInPlace(hacia.normalize().scale(delta * 1.05));
+  if (distancia < 2.8 && performance.now() > echo.metadata.nextAttack) {
+    echo.metadata.nextAttack = performance.now() + 1800;
+    state.health = Math.max(0, state.health - 9);
+    mostrarAviso("El Eco roza tu sombra. Enciende una luz y aléjate.");
   }
 }
 
@@ -1288,7 +1434,7 @@ document.querySelector("#items").addEventListener("click", (event) => {
     if (document) mostrarNota(document.text, document.title);
   }
   if (deleteNote) descartarNota(deleteNote.dataset.deleteNote);
-  if (use?.dataset.useItem === "medkit") usarBotiquin();
+  if (use) usarConsumible(use.dataset.useItem);
   if (deleteItem) descartarObjeto(deleteItem.dataset.deleteItem);
 });
 document.querySelector("#touch-interact").addEventListener("click", interactuar);
@@ -1341,7 +1487,7 @@ window.addEventListener("keydown", (event) => {
   teclasPulsadas.add(event.code);
   if (event.code === "Escape") cerrarMapa();
   if (event.code === "KeyE") notaAbierta ? cerrarNota() : interactuar();
-  if (event.code === "KeyM" && !event.repeat) abrirMochila();
+  if (event.code === "KeyM" && !event.repeat) alternarMochila();
   if (event.code === "KeyF" && !notaAbierta && !event.repeat) alternarLinterna();
   if (event.code === "KeyL" && !notaAbierta && !event.repeat)
     alternarModoLinterna();
@@ -1357,7 +1503,9 @@ escena.onBeforeRenderObservable.add(() => {
     if (pausado) return;
     const delta = motor.getDeltaTime() / 1000;
     const controles = estadoEntrada();
-    if (!notaAbierta && !escapo) actualizarJugador(jugador, controles, delta, mundo);
+     const hambreCritica = state.hunger < 18;
+     if (hambreCritica) controles.run = false;
+     if (!notaAbierta && !escapo) actualizarJugador(jugador, controles, delta, mundo);
     actualizarLinterna();
     if (
       Math.abs(jugador.camera.position.x) > 224 ||
@@ -1375,15 +1523,23 @@ escena.onBeforeRenderObservable.add(() => {
     }
     const moviendo =
       controles.forward || controles.back || controles.left || controles.right;
-    state.energy =
-      controles.run && moviendo
-        ? Math.max(0, state.energy - delta * 6)
-        : Math.min(100, state.energy + delta * 10);
-    state.hunger = Math.max(0, state.hunger - delta * 1.2);
+     state.energy =
+       controles.run && moviendo
+         ? Math.max(0, state.energy - delta * 6)
+         : Math.min(100, state.energy + delta * (hambreCritica ? 4 : 9));
+     state.hunger = Math.max(0, state.hunger - delta * 0.16);
+     if (hambreCritica && performance.now() - ultimoAvisoHambre > 18000) {
+       ultimoAvisoHambre = performance.now();
+       mostrarAviso("Tienes hambre: no puedes correr y recuperas energía más despacio.");
+     }
     actualizarPasos(controles);
     actualizarAmbiente();
     actualizarAtmosfera();
-    actualizarCriatura(delta, controles);
+     actualizarCriatura(delta, controles);
+     actualizarEco(delta);
+     mundo.campfires.forEach((fogata, indice) => {
+       if (state.fires[fogata.metadata.id]) fogata.metadata.flame.scaling.y = 1.25 + Math.sin(performance.now() * 0.009 + indice) * 0.28;
+     });
     actualizarCercano();
     actualizarMinimapa();
     actualizarSignosVitales();

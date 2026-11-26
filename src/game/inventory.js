@@ -1,4 +1,4 @@
-import { etiquetasObjetos } from "../data/items.js";
+import { descripciones, etiquetasObjetos } from "../data/items.js";
 
 // Añade una cantidad de un objeto al inventario persistente.
 export function agregarObjeto(estado, tipo, cantidad = 1) {
@@ -21,11 +21,21 @@ export function renderizarInventario(estado) {
   );
   document.querySelector("#weight").textContent =
     `${pesoInventario(estado)} / 12`;
-  const recursos = entradas
-    .map(
-      ([tipo, cantidad]) =>
-        `<div class="item-row"><span>${etiquetasObjetos[tipo]}</span><b>x${cantidad}</b>${tipo === "medkit" ? `<button data-use-item="${tipo}">USAR</button>` : ""}<button data-delete-item="${tipo}">TIRAR</button></div>`,
-    )
+  const categorias = {
+    Consumibles: ["medkit", "bandage", "cannedFood", "water", "berries", "cookedMeat", "battery"],
+    Cocina: ["rawMeat"],
+    Herramientas: ["knife", "rifle", "key", "map", "tool", "cable"],
+    Municion: ["ammo", "ammoMagazine"],
+    Mision: ["radioFuse", "industrialFuse", "card"],
+  };
+  const recursos = Object.entries(categorias)
+    .map(([categoria, tipos]) => {
+      const filas = entradas.filter(([tipo]) => tipos.includes(tipo)).map(
+        ([tipo, cantidad]) =>
+          `<div class="item-row" title="${descripciones[tipo] || "Objeto encontrado."}"><span>${etiquetasObjetos[tipo] || tipo}</span><b>x${cantidad}</b>${["medkit", "bandage", "cannedFood", "water", "berries", "cookedMeat", "battery", "ammoMagazine", "map"].includes(tipo) ? `<button data-use-item="${tipo}">USAR</button>` : ""}<button data-delete-item="${tipo}">TIRAR</button></div>`,
+      ).join("");
+      return filas ? `<p class="inventory-category">${categoria}</p>${filas}` : "";
+    })
     .join("");
   const documentos = (estado.documents || [])
     .map(
@@ -40,5 +50,6 @@ export function renderizarInventario(estado) {
 // Dibuja las entradas de la bitácora de la partida.
 export function renderizarBitacora(estado) {
   const bitacora = document.querySelector("#journal");
+  if (!bitacora) return;
   bitacora.innerHTML = `<span>BITÁCORA</span>${estado.journal.map((entrada) => `<p>${entrada}</p>`).join("")}`;
 }

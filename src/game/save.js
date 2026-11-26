@@ -1,18 +1,24 @@
-const CLAVE_GUARDADO = "bosque-desaparecidos-save-v18";
-const CLAVE_ANTERIOR = "bosque-desaparecidos-save-v17";
+const CLAVE_GUARDADO = "bosque-desaparecidos-save-v20";
+const CLAVES_ANTERIORES = ["bosque-desaparecidos-save-v19", "bosque-desaparecidos-save-v18", "bosque-desaparecidos-save-v17"];
 
 // Elimina el progreso actual y el formato anterior al iniciar una nueva historia.
 export function borrarPartida() {
   localStorage.removeItem(CLAVE_GUARDADO);
-  localStorage.removeItem(CLAVE_ANTERIOR);
+  CLAVES_ANTERIORES.forEach((clave) => localStorage.removeItem(clave));
 }
 
 // Recupera la partida almacenada o devuelve nulo si no es válida.
 export function cargarPartida() {
+  const leer = (clave) => {
+    try {
+      return JSON.parse(localStorage.getItem(clave));
+    } catch {
+      return null;
+    }
+  };
   try {
-    const actual = JSON.parse(localStorage.getItem(CLAVE_GUARDADO));
-    const anterior = JSON.parse(localStorage.getItem(CLAVE_ANTERIOR));
-    const partida = actual || anterior;
+    const actual = leer(CLAVE_GUARDADO);
+    const partida = actual || CLAVES_ANTERIORES.map(leer).find(Boolean);
     if (!partida) return null;
     if (partida.mission?.phase === "epilogue" && !partida.chapter3) {
       partida.chapter2 = true;
@@ -51,6 +57,12 @@ export function guardarPartida(estado) {
       chapter6: estado.chapter6,
       mission: estado.mission,
       settings: estado.settings,
+      fires: estado.fires,
+      receiverRepaired: estado.receiverRepaired,
+      crateUnlocked: estado.crateUnlocked,
+      killedWildlife: estado.killedWildlife,
+      triggeredTraps: estado.triggeredTraps,
+      satiatedUntil: estado.satiatedUntil,
     }),
   );
 }
