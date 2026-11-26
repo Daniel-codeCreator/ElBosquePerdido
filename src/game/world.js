@@ -14,6 +14,16 @@ function crearMaterial(escena, nombre, color, emisivo) {
   if (emisivo) material.emissiveColor = Color3.FromHexString(emisivo);
   return material;
 }
+function crearSombraContacto(scene, nombre, x, y, z, diameter = 1.5) {
+  const sombra = MeshBuilder.CreateCylinder(nombre, { height: 0.012, diameter, tessellation: 24 }, scene);
+  sombra.position.set(x, y + 0.008, z);
+  const material = crearMaterial(scene, `${nombre}-mat`, "#0b0d09");
+  material.alpha = 0.28;
+  material.disableLighting = true;
+  sombra.material = material;
+  sombra.isPickable = false;
+  return sombra;
+}
 // Calcula la altura del terreno en unas coordenadas del bosque.
 export function alturaTerreno(x, z) {
   if (Math.abs(x) < 7 && z > -15 && z < 8) return 0;
@@ -24,6 +34,8 @@ export function alturaTerreno(x, z) {
 export function construirMundo(scene, calidad = "high") {
   const obstacles = [];
   const pickups = [];
+  const animals = [];
+  const traps = [];
   const plataformas = [];
   const escaleras = [];
   const densidad = calidad === "low" ? 280 : 540;
@@ -131,7 +143,10 @@ export function construirMundo(scene, calidad = "high") {
         copaAlta.scaling.set(0.58 * escala, 0.85 * escala, 0.55 * escala);
       }
     }
-    if (i % 3 === 0) obstacles.push({ x, z, radius: 0.65 * escala });
+    if (i % 3 === 0) {
+      obstacles.push({ x, z, radius: 0.65 * escala });
+      crearSombraContacto(scene, `tree contact ${i}`, x, base, z, 2.2 * escala);
+    }
     if (i % 4 === 0) {
       const arbusto = MeshBuilder.CreateSphere(
         `bush-${i}`,
@@ -165,7 +180,7 @@ export function construirMundo(scene, calidad = "high") {
   troncoCaido.position.set(-11, alturaTerreno(-11, -10) + 0.4, -10);
   troncoCaido.material = tronco;
   // Fallen logs are scenery only, keeping the initial trail and pickups clear.
-  crearCabana(scene, obstacles);
+  crearCabana(scene, obstacles, plataformas, escaleras);
   crearCasa(scene, obstacles, -28, -48, "ranger shack");
   crearCasa(scene, obstacles, 29, -132, "riverside house");
   crearCasaGrande(scene, obstacles, -95, -100, "fire lookout");
@@ -188,7 +203,7 @@ export function construirMundo(scene, calidad = "high") {
       scene,
       "note-1",
       "note",
-      new Vector3(1.6, 1.3, -0.4),
+      new Vector3(1.5, 2.36, 2.15),
       "Nota sobre la mesa",
       "Encontraste una nota de Daniel.",
       "La primera noche escuché a alguien gritar mi nombre desde el río. Seguí la voz hasta la niebla... y entonces me respondió desde detrás de mí.\n\nNo sigas mi voz. Si regreso a esta cabaña, busca el vehículo.",
@@ -197,17 +212,20 @@ export function construirMundo(scene, calidad = "high") {
       scene,
       "cassette-cabin",
       "cassette",
-      new Vector3(2.15, 1.16, -0.18),
+      new Vector3(-1.8, 2.42, 2.15),
       "REPRODUCIR GRABACIÓN DE DANIEL",
       "",
     ),
+    crearRecogible(scene, "flashlight-cabin", "flashlight", new Vector3(-2.45, 1.98, -0.25), "Linterna junto a la cama", "Recogiste la linterna de Daniel."),
+    crearRecogible(scene, "binoculars-cabin", "binoculars", new Vector3(3.25, 2.18, 1.15), "Binoculares de visión nocturna", "Recogiste unos binoculares de visión nocturna."),
+    crearRecogible(scene, "cabin-telescope", "telescope", new Vector3(2.7, 2.25, 3.05), "OBSERVAR CON EL TELESCOPIO", ""),
   );
   pickups.push(
     crearRecogible(
       scene,
       "battery-cabin",
       "battery",
-      new Vector3(-1.5, 1.1, -0.4),
+      new Vector3(-3.35, 2.18, 1.15),
       "Batería sobre el estante",
       "Encontraste una batería de linterna.",
     ),
@@ -303,7 +321,7 @@ export function construirMundo(scene, calidad = "high") {
       scene,
       "note-2",
       "note",
-      new Vector3(-1.3, 1.25, -12),
+      new Vector3(-2.1, 1.25, -12),
       "Nota junto al vehículo",
       "Encontraste otra nota.",
       "La cosa escucha los pasos y aprende las voces. La carretera no es segura, pero hay una luz al norte.\n\nDaniel",
@@ -329,7 +347,7 @@ export function construirMundo(scene, calidad = "high") {
       scene,
       "note-4",
       "note",
-      new Vector3(29, alturaTerreno(29, -132) + 1.15, -132),
+      new Vector3(29, alturaTerreno(29, -136) + 1.15, -136),
       "Nota en la casa junto al río",
       "Encontraste otra nota de Daniel.",
       "La señal viene del norte. No puedo volver por el río: algo camina bajo el agua cuando cae la noche.\n\nDaniel",
@@ -355,11 +373,11 @@ export function construirMundo(scene, calidad = "high") {
   pickups.push(
     crearRecogible(
       scene,
-      "ammo-lookout",
-      "ammo",
+      "magazine-lookout",
+      "ammoMagazine",
       new Vector3(-94, alturaTerreno(-94, -100) + 1, -100),
-      "Caja de munición",
-      "Encontraste 3 balas de rifle.",
+      "Cargador de rifle",
+      "Encontraste un cargador con tres cartuchos.",
     ),
     crearRecogible(
       scene,
@@ -380,17 +398,17 @@ export function construirMundo(scene, calidad = "high") {
     ),
     crearRecogible(
       scene,
-      "ammo-lodge",
-      "ammo",
+      "magazine-lodge",
+      "ammoMagazine",
       new Vector3(91, alturaTerreno(91, -165) + 1, -165),
-      "Caja de munición",
-      "Encontraste 3 balas de rifle.",
+      "Cargador de rifle",
+      "Encontraste un cargador con tres cartuchos.",
     ),
     crearRecogible(
       scene,
       "fuse-lodge",
       "radioFuse",
-      new Vector3(90, alturaTerreno(90, -171.5) + 0.24, -171.5),
+      new Vector3(90, alturaTerreno(90, -176) + 1.1, -176),
       "Fusible de radio brillante",
       "Encontraste el fusible de la radio.",
     ),
@@ -407,32 +425,36 @@ export function construirMundo(scene, calidad = "high") {
    const recursosBosque = [
     ["berries-trail-1", "berries", -18, -28, "Arbusto de moras", "Recogiste frutas silvestres."],
     ["battery-trail-1", "battery", -21, -36, "Batería olvidada", "Encontraste una batería de linterna."],
-    ["ammo-trail-1", "ammo", -32, -57, "Cartuchos en una caja", "Encontraste 3 balas de rifle."],
+     ["magazine-trail-1", "ammoMagazine", -32, -57, "Cargador de rifle", "Encontraste un cargador con tres cartuchos."],
     ["berries-trail-2", "berries", -40, -68, "Arbusto de moras", "Recogiste frutas silvestres."],
     ["battery-trail-2", "battery", -54, -82, "Batería entre las rocas", "Encontraste una batería de linterna."],
-    ["ammo-trail-2", "ammo", -76, -94, "Cartuchos de cazador", "Encontraste 3 balas de rifle."],
+     ["magazine-trail-2", "ammoMagazine", -76, -94, "Cargador de rifle", "Encontraste un cargador con tres cartuchos."],
     ["medkit-trail-1", "medkit", -109, -107, "Botiquín abandonado", "Encontraste un botiquín."],
     ["berries-trail-3", "berries", -70, -123, "Frutas silvestres", "Recogiste frutas silvestres."],
     ["battery-trail-3", "battery", -42, -116, "Batería mojada", "Encontraste una batería de linterna."],
-    ["ammo-river-1", "ammo", 14, -115, "Cartuchos junto al río", "Encontraste 3 balas de rifle."],
+     ["magazine-river-1", "ammoMagazine", 14, -115, "Cargador de rifle", "Encontraste un cargador con tres cartuchos."],
     ["berries-river-1", "berries", 17, -143, "Frutas silvestres", "Recogiste frutas silvestres."],
     ["battery-river-1", "battery", 43, -145, "Batería de repuesto", "Encontraste una batería de linterna."],
-    ["ammo-river-2", "ammo", 61, -151, "Caja de cartuchos", "Encontraste 3 balas de rifle."],
+     ["magazine-river-2", "ammoMagazine", 61, -151, "Cargador de rifle", "Encontraste un cargador con tres cartuchos."],
     ["berries-north-1", "berries", 57, -177, "Frutas silvestres", "Recogiste frutas silvestres."],
     ["battery-north-1", "battery", 72, -181, "Batería abandonada", "Encontraste una batería de linterna."],
-    ["ammo-north-1", "ammo", 104, -181, "Cartuchos de emergencia", "Encontraste 3 balas de rifle."],
-    ["ammo-forest-3", "ammo", -118, -135, "Cartuchos bajo un tronco", "Encontraste 3 balas de rifle."],
-    ["ammo-forest-4", "ammo", -142, -151, "Munición olvidada", "Encontraste 3 balas de rifle."],
-    ["ammo-forest-5", "ammo", 38, -92, "Caja de cazador", "Encontraste 3 balas de rifle."],
-    ["ammo-forest-6", "ammo", 82, -128, "Cartuchos secos", "Encontraste 3 balas de rifle."],
+     ["magazine-north-1", "ammoMagazine", 104, -181, "Cargador de rifle", "Encontraste un cargador con tres cartuchos."],
+     ["magazine-forest-3", "ammoMagazine", -118, -135, "Cargador bajo un tronco", "Encontraste un cargador con tres cartuchos."],
+     ["magazine-forest-4", "ammoMagazine", -142, -151, "Cargador olvidado", "Encontraste un cargador con tres cartuchos."],
+     ["magazine-forest-5", "ammoMagazine", 38, -92, "Cargador de cazador", "Encontraste un cargador con tres cartuchos."],
+     ["magazine-forest-6", "ammoMagazine", 82, -128, "Cargador seco", "Encontraste un cargador con tres cartuchos."],
     ["medkit-north-1", "medkit", 112, -191, "Botiquín de emergencia", "Encontraste un botiquín."],
     ["berries-station-1", "berries", 119, -185, "Frutas silvestres", "Recogiste frutas silvestres."],
     ];
    // Suministros visibles en refugios, mesas y cajas abiertas; no cambian rutas de misión.
    const suministros = [
-     ["bandage-cabin", "bandage", -2.2, -0.4, "Venda en el botiquín", "Recogiste una venda limpia."],
-     ["food-ranger", "cannedFood", -28, -47.2, "Conserva sobre la mesa", "Recogiste una conserva."],
-     ["water-riverside", "water", 29, -130.8, "Agua embotellada", "Recogiste agua potable."],
+      ["bandage-cabin", "bandage", -2.2, -0.4, "Venda en el botiquín", "Recogiste una venda limpia."],
+      ["food-ranger", "cannedFood", -28, -47.2, "Conserva sobre la mesa", "Recogiste una conserva."],
+      ["food-cabin", "cannedFood", 2.5, -1.2, "Conserva en la despensa", "Recogiste una conserva."],
+      ["water-riverside", "water", 29, -130.8, "Agua embotellada", "Recogiste agua potable."],
+      ["food-lookout", "cannedFood", -92, -103, "Conserva del vigilante", "Recogiste una conserva."],
+      ["water-hunter", "water", 94, -162, "Agua del refugio", "Recogiste agua potable."],
+      ["food-station", "cannedFood", 139, -201, "Ración de emergencia", "Recogiste una conserva."],
      ["map-lookout", "map", -94, -99.1, "Mapa de rutas", "El mapa marca refugios y una frecuencia."],
      ["tool-lookout", "tool", -92.5, -100, "Herramienta multiuso", "Recogiste una herramienta multiuso."],
      ["cable-station", "cable", 137, -194, "Cable de cobre", "Recogiste un cable de cobre."],
@@ -465,7 +487,7 @@ export function construirMundo(scene, calidad = "high") {
       scene,
       "station-card",
       "card",
-      new Vector3(150, alturaTerreno(150, -213) + 0.28, -213),
+      new Vector3(150, alturaTerreno(150, -219) + 1.15, -219),
       "Tarjeta de seguridad luminosa",
       "Encontraste la tarjeta de acceso.",
     ),
@@ -473,7 +495,7 @@ export function construirMundo(scene, calidad = "high") {
       scene,
       "station-fuse-a",
       "industrialFuse",
-      new Vector3(140, alturaTerreno(140, -197) + 0.5, -197),
+      new Vector3(146, alturaTerreno(146, -222) + 0.8, -222),
       "Fusible industrial",
       "Encontraste un fusible de estación.",
     ),
@@ -481,7 +503,7 @@ export function construirMundo(scene, calidad = "high") {
       scene,
       "station-fuse-b",
       "industrialFuse",
-      new Vector3(159, alturaTerreno(159, -205) + 0.5, -205),
+      new Vector3(150, alturaTerreno(150, -222) + 0.8, -222),
       "Fusible industrial",
       "Encontraste un fusible de estación.",
     ),
@@ -489,7 +511,7 @@ export function construirMundo(scene, calidad = "high") {
       scene,
       "station-fuse-c",
       "industrialFuse",
-      new Vector3(151, alturaTerreno(151, -215) + 0.5, -215),
+      new Vector3(154, alturaTerreno(154, -222) + 0.8, -222),
       "Fusible industrial",
       "Encontraste un fusible de estación.",
     ),
@@ -497,7 +519,7 @@ export function construirMundo(scene, calidad = "high") {
       scene,
       "station-generator",
       "generator",
-      new Vector3(150, alturaTerreno(150, -210) + 0.7, -210),
+      new Vector3(146, alturaTerreno(146, -224) + 0.7, -224),
       "Panel de generadores",
       "Los tres generadores vuelven a rugir.",
     ),
@@ -505,7 +527,7 @@ export function construirMundo(scene, calidad = "high") {
       scene,
       "station-transmitter",
       "transmitter",
-      new Vector3(150, alturaTerreno(150, -218) + 0.9, -218),
+      new Vector3(154, alturaTerreno(154, -224) + 0.9, -224),
       "Transmisor con la voz de Daniel",
       "La grabación señala Valleverde: busca primero el hospital.",
     ),
@@ -517,17 +539,17 @@ export function construirMundo(scene, calidad = "high") {
   pickups.push(...coleccionablesEstacion);
   const objetivosPosteriores = [
     ["signal-1", "transmitter", 112, -185, "Transmisor entre los pinos", "Una voz imitada intenta alejarte del pueblo."],
-    ["signal-2", "transmitter", 90, -165, "Segundo transmisor", "Otra señal falsa. Daniel pasó por aquí, rumbo a Valleverde."],
-    ["signal-3", "transmitter", -95, -100, "Repetidor de la torre", "La señal auténtica confirma: «Busca el hospital primero.»"],
-    ["hospital-file", "document", -45, -61.5, "Expedientes del hospital", "Los pacientes oían voces bajo el suelo antes de desaparecer."],
-    ["police-file", "document", -68, -61.5, "Informes de la comisaría", "Los apagones y las desapariciones coinciden junto al río."],
-    ["gas-record", "document", -56, -87.5, "Registro de la gasolinera", "Un acceso de servicio bajo el río lleva a la caverna original."],
+    ["signal-2", "transmitter", 90, -173, "Segundo transmisor", "Otra señal falsa. Daniel pasó por aquí, rumbo a Valleverde."],
+    ["signal-3", "transmitter", -95, -108, "Repetidor de la torre", "La señal auténtica confirma: «Busca el hospital primero.»"],
+    ["hospital-file", "document", -45, -65.5, "Expedientes del hospital", "Los pacientes oían voces bajo el suelo antes de desaparecer."],
+    ["police-file", "document", -68, -65.5, "Informes de la comisaría", "Los apagones y las desapariciones coinciden junto al río."],
+    ["gas-record", "document", -56, -91.5, "Registro de la gasolinera", "Un acceso de servicio bajo el río lleva a la caverna original."],
     // Estos tres elementos quedan delante del portal. El bloque del túnel es
     // opaco y ocultaba los objetos cuando se colocaban en su interior.
     ["cave-entry", "serviceDoor", 186, -164, "Entrada de servicio bajo el río", "El túnel conduce a las cámaras de bombeo."],
     ["cave-valve", "valve", 181.5, -164, "Válvula de seguridad", "La válvula baja el agua durante un intervalo seguro."],
     ["daniel-cave", "daniel", 190.5, -164, "Daniel Ortega", "Daniel está herido, pero consciente. Hay que activar el núcleo de la estación."],
-    ["final-panel", "finalPanel", 150, -200, "Panel final de bombeo", "Las bombas despiertan, las luces sellan la caverna y la compuerta exterior se abre."],
+    ["final-panel", "finalPanel", 150, -226, "Panel final de bombeo", "Las bombas despiertan, las luces sellan la caverna y la compuerta exterior se abre."],
   ];
   objetivosPosteriores.forEach(([id, type, x, z, label, message]) => {
     const offset = ["transmitter", "serviceDoor", "valve", "finalPanel", "daniel"].includes(type) ? 0.85 : 0.42;
@@ -535,6 +557,21 @@ export function construirMundo(scene, calidad = "high") {
     objeto.metadata.chapter = type === "transmitter" ? 3 : ["document"].includes(type) ? 4 : type === "finalPanel" ? 6 : 5;
     pickups.push(objeto);
   });
+  // These beacons do not belong to the disposable pickup mesh. They remain at
+  // the exact map coordinate while the matching signal is the active mission.
+  const signalBeacons = [
+    crearBalizaMision(scene, "signal-1", 112, -185),
+    crearBalizaMision(scene, "signal-2", 90, -173),
+    crearBalizaMision(scene, "signal-3", -95, -108),
+  ];
+  [
+    ["deer-1", "deer", -143, -28], ["deer-2", "deer", -132, -151],
+    ["fox-1", "fox", 43, -55], ["fox-2", "fox", 120, -122],
+    ["bat-1", "bat", -155, -115], ["firefly-1", "firefly", 52, -105],
+  ].forEach(([id, type, x, z]) => animals.push(crearAnimal(scene, id, type, x, z)));
+  [
+    ["trap-1", -124, -43], ["trap-2", 55, -72], ["trap-3", 126, -138],
+  ].forEach(([id, x, z]) => traps.push(crearTrampa(scene, id, x, z)));
   return {
     pickups,
     campfires,
@@ -568,58 +605,97 @@ export function construirMundo(scene, calidad = "high") {
           progreso * (escalera.height - alturaTerreno(escalera.x, escalera.z))
         );
       }
-      return upstairs && plataforma ? plataforma.height : alturaTerreno(x, z);
+      return plataforma ? plataforma.height : alturaTerreno(x, z);
     },
     escapePoint,
     creature,
+    animals,
+    traps,
+    signalBeacons,
     isSafeMonsterPosition(x, z) {
       return decoracionSegura(x, z, 14) && Math.abs(x) < 210 && Math.abs(z) < 210;
     },
   };
 }
 
+// A high, emissive mast and lamp that is never disposed with its transmitter.
+function crearBalizaMision(scene, id, x, z) {
+  const base = new Vector3(x, alturaTerreno(x, z), z);
+  const root = MeshBuilder.CreateCylinder(`${id}-beacon`, { height: 11, diameter: 0.34, tessellation: 8 }, scene);
+  root.position.copyFrom(base).addInPlace(new Vector3(0, 5.5, 0));
+  root.material = crearMaterial(scene, `${id}-beacon-mat`, "#2b5556", "#57fff0");
+  const crown = MeshBuilder.CreateSphere(`${id}-beacon-crown`, { diameter: 1.25, segments: 8 }, scene);
+  crown.parent = root;
+  crown.position.y = 5.2;
+  crown.material = crearMaterial(scene, `${id}-beacon-crown-mat`, "#b8fff4", "#6affee");
+  const light = new PointLight(`${id}-beacon-light`, root.position.add(new Vector3(0, 5.1, 0)), scene);
+  light.diffuse = Color3.FromHexString("#6affee"); light.intensity = 5; light.range = 58;
+  root.metadata = { id, light };
+  root.setEnabled(false);
+  return root;
+}
+
+function crearAnimal(scene, id, type, x, z) {
+  const root = MeshBuilder.CreateSphere(id, { diameter: type === "deer" ? 1.15 : type === "fox" ? 0.7 : 0.35, segments: 6 }, scene);
+  root.position.set(x, alturaTerreno(x, z) + (type === "deer" ? 0.8 : 0.42), z);
+  root.material = crearMaterial(scene, `${id}-mat`, type === "deer" ? "#9a6b3d" : type === "fox" ? "#b65c31" : type === "bat" ? "#29313d" : "#b7e850", type === "firefly" ? "#8bdb35" : "#1b110b");
+  if (["deer", "fox"].includes(type)) {
+    [-0.32, 0.32].forEach((ox, index) => {
+      const leg = MeshBuilder.CreateCylinder(`${id}-leg-${index}`, { height: type === "deer" ? 0.85 : 0.45, diameter: 0.1, tessellation: 5 }, scene);
+      leg.parent = root; leg.position.set(ox, -(type === "deer" ? 0.72 : 0.4), index ? 0.22 : -0.22); leg.material = root.material;
+    });
+  }
+  root.metadata = { id, type, home: root.position.clone(), health: 5, dead: false, phase: Math.random() * 6.28 };
+  return root;
+}
+
+function crearTrampa(scene, id, x, z) {
+  const root = MeshBuilder.CreateTorus(id, { diameter: 1.3, thickness: 0.12, tessellation: 8 }, scene);
+  root.position.set(x, alturaTerreno(x, z) + 0.08, z); root.rotation.x = Math.PI / 2;
+  root.material = crearMaterial(scene, `${id}-mat`, "#6f5840", "#573f28");
+  root.metadata = { id, radius: 1.2 };
+  return root;
+}
+
 // Construye la cabaña inicial y registra sus paredes como obstáculos.
-function crearCabana(scene, obstacles) {
-  const cabin = crearMaterial(scene, "cabin", "#4d3c28", "#100904");
-  const floor = MeshBuilder.CreateBox(
-    "cabin floor",
-    { width: 8, height: 0.18, depth: 7 },
-    scene,
-  );
-  floor.position.y = 0.1;
-  floor.material = crearMaterial(scene, "floor", "#342a1d", "#090604");
-  new PointLight("cabin lamp", new Vector3(0, 3.3, 0.8), scene).intensity = 1.4;
-  [
-    [-4, 0, 0.35, 3.5],
-    [4, 0, 0.35, 3.5],
-    [0, 3.5, 4, 0.25],
-    [-2.8, -3.5, 1.2, 0.25],
-    [2.8, -3.5, 1.2, 0.25],
-  // Construye cada pared de la cabaña.
-  ].forEach(([x, z, halfX, halfZ], i) => {
-    const wall = MeshBuilder.CreateBox(
-      `wall-${i}`,
-      { width: halfX * 2, height: 4, depth: halfZ * 2 },
-      scene,
-    );
-    wall.position.set(x, 2, z);
-    wall.material = cabin;
+function crearCabana(scene, obstacles, plataformas, escaleras) {
+  const deckHeight = 1.35;
+  const madera = crearMaterial(scene, "cabin timber", "#6a482d");
+  const oscura = crearMaterial(scene, "cabin dark timber", "#342416");
+  const metal = crearMaterial(scene, "cabin metal", "#697572");
+  const caja = (name, width, height, depth, x, y, z, material = madera) => {
+    const mesh = MeshBuilder.CreateBox(name, { width, height, depth }, scene);
+    mesh.position.set(x, y, z); mesh.material = material; mesh.isPickable = false;
+    return mesh;
+  };
+  caja("cabin elevated platform", 10, 0.18, 7.4, 0, deckHeight, 0.9, oscura);
+  plataformas.push({ x: 0, z: 0.9, halfX: 5, halfZ: 3.7, height: deckHeight + 0.09 });
+  crearSombraContacto(scene, "cabin platform contact", 0, 0, 0.9, 10.5);
+  [-4.35, 4.35].forEach((x) => [-1.9, 3.7].forEach((z, i) => {
+    const support = MeshBuilder.CreateCylinder(`cabin support ${x}-${i}`, { height: deckHeight, diameter: 0.34, tessellation: 8 }, scene);
+    support.position.set(x, deckHeight / 2, z); support.material = oscura; support.isPickable = false;
+  }));
+  for (let step = 0; step < 6; step++) caja(`cabin stair ${step}`, 2.5, 0.14, 0.62, 0, ((step + 1) / 6) * deckHeight - 0.07, -5 + step * 0.62);
+  escaleras.push({ x: 0, z: -3.45, halfX: 1.35, halfZ: 1.9, startZ: -5.2, endZ: -1.7, height: deckHeight + 0.09 });
+  [[-4.5, 0.9, 0.2, 3.7], [4.5, 0.9, 0.2, 3.7], [0, 4.5, 4.7, 0.2]].forEach(([x, z, halfX, halfZ], i) => {
+    caja(`cabin wall ${i}`, halfX * 2, 3.25, halfZ * 2, x, deckHeight + 1.68, z);
     obstacles.push({ x, z, halfX, halfZ });
   });
-  const roof = MeshBuilder.CreateBox(
-    "roof",
-    { width: 8.5, height: 0.25, depth: 7.5 },
-    scene,
-  );
-  roof.position.y = 4.2;
-  roof.material = crearMaterial(scene, "roof", "#16120e");
-  const table = MeshBuilder.CreateBox(
-    "table",
-    { width: 1.8, height: 1.1, depth: 0.9 },
-    scene,
-  );
-  table.position.set(1.6, 0.55, -0.4);
-  table.material = crearMaterial(scene, "table", "#4a3824");
+  [-4, 4].forEach((x, i) => caja(`cabin entrance post ${i}`, 0.36, 3.25, 0.36, x, deckHeight + 1.68, -2.75));
+  caja("cabin roof", 10, 0.26, 8.2, 0, deckHeight + 3.4, 0.9, oscura);
+  [-4.82, 4.82].forEach((x) => caja(`cabin rail ${x}`, 0.14, 0.85, 6.8, x, deckHeight + 0.5, 1.05));
+  caja("cabin back rail", 9.5, 0.85, 0.14, 0, deckHeight + 0.5, 4.55);
+  caja("cabin table", 2.3, 0.95, 1.05, 1.5, deckHeight + 0.48, 2.15);
+  caja("cabin bed", 2.15, 0.38, 1.25, -2.55, deckHeight + 0.22, -0.25, oscura);
+  caja("cabin blanket", 1.85, 0.12, 0.92, -2.55, deckHeight + 0.47, -0.13, crearMaterial(scene, "cabin bedding", "#687069"));
+  for (let level = 0; level < 3; level++) caja(`cabin shelf ${level}`, 1.5, 0.12, 0.45, -3.5, deckHeight + 0.6 + level * 0.65, 1.15);
+  caja("cabin crate one", 0.75, 0.65, 0.75, -3.45, deckHeight + 0.42, 2.85, oscura);
+  caja("cabin crate two", 0.72, 0.52, 0.7, 3.5, deckHeight + 0.35, -0.5, oscura);
+  caja("cabin radio", 0.8, 0.38, 0.38, 0.2, deckHeight + 1.12, 2.2, metal);
+  const tripod = MeshBuilder.CreateCylinder("cabin telescope tripod", { height: 1.05, diameterTop: 0.07, diameterBottom: 0.75, tessellation: 6 }, scene);
+  tripod.position.set(2.7, deckHeight + 0.53, 3.05); tripod.material = metal; tripod.isPickable = false;
+  const lamp = new PointLight("cabin lamp", new Vector3(0, deckHeight + 2.75, 1.1), scene);
+  lamp.diffuse = Color3.FromHexString("#ffd69a"); lamp.intensity = 1.1;
   const car = MeshBuilder.CreateBox(
     "vehicle",
     { width: 2.4, height: 1.15, depth: 4.4 },
@@ -909,6 +985,7 @@ function crearFogata(scene, id, position) {
   light.diffuse = Color3.FromHexString("#ff9d4d");
   light.range = 15;
   light.intensity = 0;
+  root.isPickable = true;
   root.metadata = { id, type: "campfire", label: "ENCENDER FOGATA (1 LEÑA)", flame, light };
   return root;
 }
@@ -938,7 +1015,6 @@ export function crearRecogible(
     battery: ["#d7b83d", "#5d4800"],
     knife: ["#bcc5c2", "#4a5654"],
     rifle: ["#4a3321", "#17120e"],
-    ammo: ["#b58f39", "#3d2b0b"],
     medkit: ["#d6e3d5", "#a92424"],
     bandage: ["#ded7c0", "#7a6b4c"],
     cannedFood: ["#71846b", "#2e3e2e"],
@@ -948,6 +1024,8 @@ export function crearRecogible(
     map: ["#d7c797", "#75633b"],
     tool: ["#aab7b0", "#3d4b47"],
     cable: ["#bd7438", "#5e2d17"],
+    rawMeat: ["#9c3d31", "#4d0e0d"],
+    cookedMeat: ["#8e5128", "#3e1908"],
     loreDocument: ["#d9e5d8", "#80cdbd"],
     receiver: ["#42585a", "#9ee9dd"],
     supplyCrate: ["#69492a", "#b99851"],
@@ -963,6 +1041,9 @@ export function crearRecogible(
     serviceDoor: ["#465456", "#7de4d4"],
     valve: ["#a74837", "#f5a05c"],
     finalPanel: ["#35484a", "#80ffb1"],
+    flashlight: ["#45524d", "#f0d078"],
+    binoculars: ["#52665b", "#7dd49d"],
+    telescope: ["#5b615d", "#a5d5ca"],
   };
   let malla;
   if (type === "note") {
@@ -998,7 +1079,7 @@ export function crearRecogible(
       scene,
     );
     malla.rotation.y = -0.35;
-  } else if (type === "ammo") {
+  } else if (type === "ammoMagazine") {
     malla = MeshBuilder.CreateBox(
       id,
       { width: 0.46, height: 0.28, depth: 0.34 },
@@ -1016,6 +1097,19 @@ export function crearRecogible(
       { width: 0.82, height: 0.16, depth: 0.52 },
       scene,
     );
+  } else if (type === "flashlight") {
+    malla = MeshBuilder.CreateCylinder(id, { height: 0.7, diameter: 0.22, tessellation: 10 }, scene);
+    malla.rotation.z = Math.PI / 2;
+  } else if (type === "binoculars") {
+    malla = MeshBuilder.CreateBox(id, { width: 0.65, height: 0.28, depth: 0.32 }, scene);
+    [-0.2, 0.2].forEach((x, index) => {
+      const lens = MeshBuilder.CreateCylinder(`${id}-lens-${index}`, { height: 0.08, diameter: 0.28, tessellation: 10 }, scene);
+      lens.parent = malla; lens.position.set(x, 0, -0.19); lens.rotation.x = Math.PI / 2;
+      lens.material = crearMaterial(scene, `${id}-lens-mat-${index}`, "#8dd7a7", "#214d35");
+    });
+  } else if (type === "telescope") {
+    malla = MeshBuilder.CreateCylinder(id, { height: 1.15, diameter: 0.18, tessellation: 10 }, scene);
+    malla.rotation.z = Math.PI / 2; malla.rotation.y = -0.2;
   } else if (type === "radioFuse") {
     malla = MeshBuilder.CreateBox(
       id,
@@ -1026,8 +1120,8 @@ export function crearRecogible(
     malla = MeshBuilder.CreateCylinder(
       id,
       {
-        height: 0.5,
-        diameter: 0.12,
+        height: type === "industrialFuse" ? 0.9 : 0.5,
+        diameter: type === "industrialFuse" ? 0.28 : 0.12,
         tessellation: 8,
       },
       scene,
@@ -1057,6 +1151,8 @@ export function crearRecogible(
     );
   } else if (type === "document") {
     malla = MeshBuilder.CreateBox(id, { width: 0.68, height: 0.08, depth: 0.92 }, scene);
+  } else if (type === "rawMeat" || type === "cookedMeat") {
+    malla = MeshBuilder.CreateSphere(id, { diameter: 0.48, segments: 6 }, scene);
   } else if (type === "daniel") {
     malla = MeshBuilder.CreateCylinder(
       id,
@@ -1098,7 +1194,7 @@ export function crearRecogible(
   } else if (type === "rifle") {
     detalle("barrel", { width: 0.07, height: 0.07, depth: 0.92 }, new Vector3(0, 0.08, -0.65), "#85908c");
     detalle("stock", { width: 0.22, height: 0.2, depth: 0.48 }, new Vector3(0, -0.03, 0.52), "#684124");
-  } else if (type === "ammo") {
+  } else if (type === "ammoMagazine") {
     [-0.12, 0, 0.12].forEach((x, index) => {
       const cartridge = MeshBuilder.CreateCylinder(`${id}-cartridge-${index}`, { height: 0.3, diameter: 0.07, tessellation: 6 }, scene);
       cartridge.parent = malla;
@@ -1137,27 +1233,30 @@ export function crearRecogible(
       arm.material = crearMaterial(scene, `${id}-arm-mat-${index}`, "#4c5c4d");
     });
   }
-  if (["radioFuse", "transmitter", "document", "serviceDoor", "valve", "finalPanel", "daniel"].includes(type)) {
-    const luzFusible = new PointLight(
+  let luzObjetivo = null;
+  if (["radioFuse", "industrialFuse", "transmitter", "document", "serviceDoor", "valve", "finalPanel", "daniel"].includes(type)) {
+    luzObjetivo = new PointLight(
       `${id}-light`,
       position.add(new Vector3(0, 0.45, 0)),
       scene,
     );
-    luzFusible.diffuse = Color3.FromHexString(type === "valve" ? "#ff9b55" : "#7de4d4");
-    luzFusible.intensity = type === "transmitter" ? 3 : type === "radioFuse" ? 0.45 : 1.1;
-    luzFusible.range = type === "transmitter" ? 18 : type === "radioFuse" ? 3.5 : 7;
+    luzObjetivo.diffuse = Color3.FromHexString(["radioFuse", "industrialFuse"].includes(type) ? "#ffd65d" : type === "valve" ? "#ff9b55" : "#7de4d4");
+    luzObjetivo.intensity = type === "transmitter" ? 3 : ["radioFuse", "industrialFuse"].includes(type) ? 3.5 : 1.1;
+    luzObjetivo.range = type === "transmitter" ? 18 : ["radioFuse", "industrialFuse"].includes(type) ? 18 : 7;
   }
   if (type === "card") {
-    const luzTarjeta = new PointLight(
+    luzObjetivo = new PointLight(
       `${id}-light`,
       position.add(new Vector3(0, 0.3, 0)),
       scene,
     );
-    luzTarjeta.diffuse = Color3.FromHexString("#5ab8bc");
-    luzTarjeta.intensity = 0.8;
-    luzTarjeta.range = 4;
+    luzObjetivo.diffuse = Color3.FromHexString("#5ab8bc");
+    luzObjetivo.intensity = 3.2;
+    luzObjetivo.range = 18;
   }
-  malla.metadata = { id, type, label, message, noteText };
+  malla.isPickable = true;
+  malla.metadata = { id, type, label, message, noteText, luzObjetivo };
+  if (luzObjetivo) malla.onDisposeObservable.add(() => luzObjetivo.dispose());
   return malla;
 }
 // Construye el pueblo evacuado lejos del río para futuras investigaciones.

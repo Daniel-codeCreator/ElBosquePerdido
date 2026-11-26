@@ -17,6 +17,16 @@ Formato: fecha - estado - cambio.
 2026-11-26 - HECHO - Se suavizó el hambre y se añadieron efectos críticos legibles sobre carrera y recuperación de energía.
 2026-11-26 - HECHO - La criatura principal usa estados patrulla, sospecha, persecución y búsqueda; el Eco aparece desde el capítulo IV y se inmoviliza ante luz.
 2026-11-26 - HECHO - Se añadió audio procedural centralizado por categorías y documentación de la limitación de medios externos.
+2026-11-26 - HECHO - Se corrigió la fiabilidad de las señales del Capítulo III: balizas altas e independientes en las coordenadas exactas, luces de largo alcance, interacción ampliada y reparación de guardados con la señal actual marcada por error.
+2026-11-26 - HECHO - Se centralizó el equilibrio en src/game/config.js: batería de 25 minutos en haz normal, multiplicador del haz largo y saciedad de 40 minutos por defecto.
+2026-11-26 - HECHO - Se añadieron provisiones seguras, fauna low-poly cazable (ciervos y zorros), fauna ambiental, carne cruda/cocinada, beneficio temporal de saciedad y persistencia de caza.
+2026-11-26 - HECHO - Se añadieron trampas visibles no bloqueantes con corte por cuchillo o secuencia accesible por teclado; las trampas liberadas quedan inutilizadas y persistentes.
+2026-11-26 - HECHO - La munición se unificó en cargadores de tres balas; los guardados con munición suelta se migran a cargadores sin alterar el rifle cargado.
+2026-11-26 - HECHO - Se añadió selección persistente de arma con J, ataque contextual con G y modelos low-poly de rifle/cuchillo en primera persona.
+2026-11-26 - HECHO - La interacción prioriza el raycast del centro de la mira y no atraviesa paredes; la pausa desacopla cámara, detiene actualizaciones y suspende el audio.
+2026-11-26 - HECHO - Se reconstruyó la cabaña inicial como refugio elevado accesible con escalera, entrada abierta, mobiliario visible, telescopio opcional y objetos iniciales separados sin cambiar sus IDs de misión.
+2026-11-26 - HECHO - La linterna ahora se recoge junto a la cama en partidas nuevas; partidas anteriores reciben el objeto al migrar. Se añadieron binoculares nocturnos con Q, zoom temporal y una superposición CSS de dos lentes.
+2026-11-26 - HECHO - Se ajustó la iluminación nocturna para preservar colores de materiales y se añadieron sombras de contacto y una guía de suelo de la linterna sin pipeline de sombras en tiempo real.
 
 VERIFICACION
 - npm run build finaliza correctamente.

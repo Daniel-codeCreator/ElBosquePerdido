@@ -5,20 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07100d" />
     <title>El Bosque de los Desaparecidos</title>
+    <style>
+      html { background: #06100b; }
+      body { visibility: hidden; background: #06100b; }
+      body.game-ready { visibility: visible; }
+    </style>
   </head>
   <body>
     <canvas id="render-canvas" aria-label="Escena 3D del bosque"></canvas>
     <div class="vignette"></div>
+    <div id="night-vision-overlay" hidden aria-hidden="true"><i></i><i></i></div>
     <header class="topbar">
       <span class="brand">ARCHIVO 08 <i>/</i> BOSQUE NORTE</span
       ><span id="objective">Revisa la cabaña y encuentra una pista.</span
       ><span class="ammo-hud" id="ammo-hud" hidden
         >RIFLE <b id="rifle-ammo">0 / 3</b> ·
-        <small id="ammo-reserve">0 RESERVA</small></span
-        ><button id="flashlight-button" class="active">
+        <small id="ammo-reserve">0 CARGADORES</small></span
+        ><span id="weapon-hud">ARMA: NINGUNA</span
+        ><button id="flashlight-button">
           LINTERNA <b id="battery-value">100%</b>
           <small id="flashlight-mode">CERCA</small></button
         ><button id="quality-button">CALIDAD: ALTA</button
+        ><span id="night-vision-status" hidden>NV [Q]</span
         ><button id="pause-button">PAUSA [P]</button
         ><button id="backpack-button">MOCHILA [M]</button
       ><button id="save-button">GUARDAR [CTRL+A]</button>
@@ -71,6 +79,7 @@
       <div id="items" class="items"><p>Vacía</p></div>
     </aside>
     <div class="toast" id="toast" role="status"></div>
+    <div class="combat-effect" id="combat-effect" aria-hidden="true"></div>
     <div class="crosshair" aria-hidden="true"></div>
     <div class="mobile-controls" aria-label="Controles táctiles">
       <div class="touch-joystick">
@@ -101,6 +110,32 @@
         </div>
         <button id="decline-battery">NO</button
         ><button id="replace-battery">SÍ, COLOCAR</button>
+      </article>
+    </section>
+    <section class="note-modal" id="trap-modal" hidden role="dialog" aria-modal="true" aria-labelledby="trap-title">
+      <article>
+        <p>TRAMPA DEL BOSQUE</p>
+        <h2 id="trap-title">Has quedado atrapado</h2>
+        <div><p id="trap-status" aria-live="assertive"></p></div>
+        <button id="cut-trap">CORTAR CON CUCHILLO</button><button id="start-trap">INICIAR [E]</button>
+      </article>
+    </section>
+    <section class="pause-modal" id="pause-modal" hidden role="dialog" aria-modal="true" aria-labelledby="pause-title">
+      <article>
+        <p>ARCHIVO 08 / PAUSA</p>
+        <h2 id="pause-title">Juego en pausa</h2>
+        <div class="pause-actions" id="pause-actions">
+          <button id="resume-game">CONTINUAR</button>
+          <button id="open-settings">AJUSTES</button>
+          <button id="restart-story">REINICIAR HISTORIA</button>
+        </div>
+        <div id="settings-panel" hidden>
+          <label for="sensitivity-setting">SENSIBILIDAD <output id="sensitivity-value">100%</output></label>
+          <input id="sensitivity-setting" type="range" min="25" max="200" value="100" step="5" />
+          <label for="volume-setting">SONIDO <output id="volume-value">100%</output></label>
+          <input id="volume-setting" type="range" min="0" max="100" value="100" step="5" />
+          <button id="close-settings">VOLVER</button>
+        </div>
       </article>
     </section>
     <section class="note-modal" id="ending-modal" hidden>
@@ -154,8 +189,8 @@
       <button id="start-button">ABRIR EXPEDIENTE</button>
       <button id="briefing-continue" hidden>COMENZAR BÚSQUEDA</button>
       <small
-        >WASD o flechas para caminar · Ratón para mirar · F linterna · L cambia
-        el haz · E usar · G disparar · R recargar · K cuchillo · H botiquín · P pausa</small
+         >WASD o flechas para caminar · Ratón para mirar · F linterna · L cambia
+          el haz · Q visión nocturna · E usar · J cambiar arma · G atacar · R recargar · H botiquín · P pausa</small
       >
     </section>
     <script type="module" src="/src/main.js"></script>

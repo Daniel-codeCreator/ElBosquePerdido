@@ -10,8 +10,8 @@ export const objetivosCapitulo1 = {
 
 export const puntosCapitulo1 = {
   "note-1": [1.6, -0.4],
-  "note-2": [-1.3, -12],
-  "note-4": [29, -132],
-  "radio-fuse": [90, -171.5],
+  "note-2": [-2.1, -12],
+  "note-4": [29, -136],
+  "radio-fuse": [90, -176],
   radio: [0, -210],
 };

@@ -8,7 +8,7 @@ export function agregarObjeto(estado, tipo, cantidad = 1) {
 // Calcula el peso ocupado por los objetos del inventario.
 export function pesoInventario(estado) {
   return Object.entries(estado.inventory).reduce(
-    (total, [tipo, cantidad]) => total + (tipo === "ammo" ? 1 : cantidad),
+    (total, [, cantidad]) => total + cantidad,
     0,
   );
 }
@@ -24,15 +24,15 @@ export function renderizarInventario(estado) {
   const categorias = {
     Consumibles: ["medkit", "bandage", "cannedFood", "water", "berries", "cookedMeat", "battery"],
     Cocina: ["rawMeat"],
-    Herramientas: ["knife", "rifle", "key", "map", "tool", "cable"],
-    Municion: ["ammo", "ammoMagazine"],
+    Herramientas: ["knife", "rifle", "key", "map", "tool", "cable", "flashlight", "binoculars"],
+    Municion: ["ammoMagazine"],
     Mision: ["radioFuse", "industrialFuse", "card"],
   };
   const recursos = Object.entries(categorias)
     .map(([categoria, tipos]) => {
       const filas = entradas.filter(([tipo]) => tipos.includes(tipo)).map(
         ([tipo, cantidad]) =>
-          `<div class="item-row" title="${descripciones[tipo] || "Objeto encontrado."}"><span>${etiquetasObjetos[tipo] || tipo}</span><b>x${cantidad}</b>${["medkit", "bandage", "cannedFood", "water", "berries", "cookedMeat", "battery", "ammoMagazine", "map"].includes(tipo) ? `<button data-use-item="${tipo}">USAR</button>` : ""}<button data-delete-item="${tipo}">TIRAR</button></div>`,
+          `<div class="item-row" title="${descripciones[tipo] || "Objeto encontrado."}"><span>${etiquetasObjetos[tipo] || tipo}</span><b>x${cantidad}</b>${["medkit", "bandage", "cannedFood", "water", "berries", "cookedMeat", "battery", "map"].includes(tipo) ? `<button data-use-item="${tipo}">USAR</button>` : ""}<button data-delete-item="${tipo}">TIRAR</button></div>`,
       ).join("");
       return filas ? `<p class="inventory-category">${categoria}</p>${filas}` : "";
     })

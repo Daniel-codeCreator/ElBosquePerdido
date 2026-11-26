@@ -11,8 +11,8 @@ export function objetivoCapitulo2(fase, estado) {
 }
 
 export const puntosCapitulo2 = {
-  "find-card": [150, -213],
-  "industrial-fuses": [140, -197],
-  generator: [150, -210],
-  daniel: [150, -218],
+  "find-card": [150, -219],
+  "industrial-fuses": [146, -222],
+  generator: [146, -224],
+  "station-transmitter": [154, -224],
 };

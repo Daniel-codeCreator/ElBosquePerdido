@@ -4,7 +4,6 @@ export const etiquetasObjetos = {
   battery: "Batería de linterna",
   knife: "Cuchillo de monte",
   rifle: "Rifle de caza",
-  ammo: "Munición de rifle",
   medkit: "Botiquín",
   bandage: "Venda",
   cannedFood: "Conserva",
@@ -20,6 +19,8 @@ export const etiquetasObjetos = {
   industrialFuse: "Fusible industrial",
   card: "Tarjeta de seguridad",
   note: "Nota de Daniel",
+  flashlight: "Linterna",
+  binoculars: "Binoculares nocturnos",
 };
 
 export const descripciones = {
@@ -37,4 +38,6 @@ export const descripciones = {
   map: "Marca refugios y una frecuencia escrita a mano.",
   tool: "Sirve para reparar el receptor de campo.",
   cable: "Tramo de cobre aislado para el receptor de campo.",
+  flashlight: "Linterna de mano. Ilumina el camino al pulsar F.",
+  binoculars: "Binoculares con visión nocturna. Pulsa Q para alternarlos.",
 };

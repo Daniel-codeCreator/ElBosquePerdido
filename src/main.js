@@ -2,7 +2,10 @@ import "./ui/styles.css";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Ray } from "@babylonjs/core/Culling/ray";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
@@ -13,6 +16,7 @@ import {
   actualizarJugador,
 } from "./game/player.js";
 import { construirMundo, crearRecogible } from "./game/world.js";
+import { CONFIG } from "./game/config.js";
 import {
   agregarObjeto,
   pesoInventario,
@@ -42,9 +46,11 @@ const state = {
   health: 100,
   energy: 100,
   hunger: 70,
-  flashlight: true,
+  flashlight: false,
+  flashlightAcquired: false,
   battery: 100,
   rifleAmmo: 0,
+  equippedWeapon: "knife",
   chapter2: false,
   stationPowered: false,
   chapter2Finished: false,
@@ -57,21 +63,46 @@ const state = {
   fires: {},
   receiverRepaired: false,
   crateUnlocked: false,
+  killedWildlife: [],
+  triggeredTraps: [],
+  satiatedUntil: 0,
 };
 const partidaGuardada = cargarPartida();
 if (partidaGuardada) Object.assign(state, partidaGuardada);
 state.inventory ??= {};
+// Las partidas anteriores ya disponían de linterna; las nuevas deben recogerla.
+let linternaMigrada = false;
+if (partidaGuardada && state.flashlightAcquired === undefined) {
+  state.inventory.flashlight = 1;
+  state.flashlightAcquired = true;
+  linternaMigrada = true;
+}
+state.flashlightAcquired ??= false;
+const municionAntigua = Math.max(0, Number(state.inventory.ammo) || 0);
+if (municionAntigua) {
+  state.inventory.ammoMagazine = (state.inventory.ammoMagazine || 0) + Math.ceil(municionAntigua / 3);
+}
+const municionMigrada = "ammo" in state.inventory;
+delete state.inventory.ammo;
 state.collected ??= [];
 state.rifleAmmo ??= 0;
+if (!state.inventory[state.equippedWeapon])
+  state.equippedWeapon = state.inventory.knife ? "knife" : "rifle";
 state.readNotes ??= [];
 state.documents ??= [];
 state.fires ??= {};
+state.killedWildlife ??= [];
+state.triggeredTraps ??= [];
+state.satiatedUntil ??= 0;
 state.settings ??= { quality: "high", flashlightMode: "wide" };
 state.settings.audio ??= { master: 1, effects: 1, ambient: 1, music: 1 };
+state.settings.sensitivity ??= 1;
 state.mission ??= { phase: state.chapter2 ? "find-card" : "note-1" };
 const fasesCapitulo3 = ["signal-1", "signal-2", "signal-3"];
 const fasesCapitulo4 = ["hospital-file", "police-file", "gas-record"];
 const fasesCapitulo5 = ["cave-entry", "cave-valve", "cave-daniel"];
+const fasesPosterioresARadio = ["find-card", "industrial-fuses", "generator", "station-transmitter", ...fasesCapitulo3, ...fasesCapitulo4, ...fasesCapitulo5, "final-panel", "epilogue"];
+state.chapter2 ||= fasesPosterioresARadio.includes(state.mission.phase);
 state.chapter3 ||= fasesCapitulo3.includes(state.mission.phase) || fasesCapitulo4.includes(state.mission.phase) || fasesCapitulo5.includes(state.mission.phase) || ["final-panel", "epilogue"].includes(state.mission.phase);
 state.chapter4 ||= fasesCapitulo4.includes(state.mission.phase) || fasesCapitulo5.includes(state.mission.phase) || ["final-panel", "epilogue"].includes(state.mission.phase);
 state.chapter5 ||= fasesCapitulo5.includes(state.mission.phase) || ["final-panel", "epilogue"].includes(state.mission.phase);
@@ -91,6 +122,11 @@ function sincronizarMisionNotas() {
 // Restaura objetos de misión que se perdieron en guardados anteriores.
 function repararObjetosMision() {
   let reparado = false;
+  // A signal phase always needs its transmitter, even in an inconsistent save.
+  if (fasesCapitulo3.includes(state.mission.phase) && state.collected.includes(state.mission.phase)) {
+    state.collected = state.collected.filter((id) => id !== state.mission.phase);
+    reparado = true;
+  }
   if (
     !state.chapter2 &&
     ["radio-fuse", "radio"].includes(state.mission.phase) &&
@@ -130,7 +166,7 @@ function repararObjetosMision() {
 }
 const misionSincronizada = sincronizarMisionNotas();
 const objetosReparados = repararObjetosMision();
-if (misionSincronizada || objetosReparados) guardarPartida(state);
+if (misionSincronizada || objetosReparados || municionMigrada || linternaMigrada) guardarPartida(state);
 const tieneProgresoGuardado = Boolean(
   partidaGuardada &&
     (state.collected.length ||
@@ -144,6 +180,7 @@ let notaAbierta = false;
 let escapo = false;
 let cercaSalida = false;
 let pausado = false;
+let controlesCamaraAdjuntos = true;
 let saludCriatura = 3;
 let contextoAudio = null;
 let proximoPaso = 0;
@@ -156,6 +193,11 @@ const gananciasAudio = {};
 let proximoSonidoRio = 0;
 let proximoPasoCriatura = 0;
 let ultimoAvisoHambre = 0;
+let atrapado = false;
+let minijuegoTrampa = null;
+let visionNocturnaActiva = false;
+let linternaAntesDeVision = false;
+let fovAntesDeVision = null;
 const teclasPulsadas = new Set();
 const entradaTactil = {
   forward: 0,
@@ -174,8 +216,8 @@ escena.fogDensity = 0.021;
 escena.fogColor = new Color3(0.045, 0.11, 0.11);
 const luzCielo = new HemisphericLight("moon", new Vector3(0.2, 1, 0.1), escena);
 luzCielo.diffuse = new Color3(0.28, 0.45, 0.5);
-luzCielo.groundColor = new Color3(0.025, 0.055, 0.045);
-luzCielo.intensity = 0.62;
+luzCielo.groundColor = new Color3(0.055, 0.07, 0.055);
+luzCielo.intensity = 0.52;
 const luna = new DirectionalLight(
   "moonlight",
   new Vector3(-0.45, -1, 0.25),
@@ -183,7 +225,7 @@ const luna = new DirectionalLight(
 );
 luna.position = new Vector3(20, 35, -20);
 luna.diffuse = new Color3(0.5, 0.68, 0.72);
-luna.intensity = 0.82;
+luna.intensity = 0.58;
 new GlowLayer("atmosphere", escena).intensity = 0.35;
 const jugador = crearJugador(escena, lienzo);
 escena.activeCamera = jugador.camera;
@@ -195,7 +237,7 @@ const linterna = new SpotLight(
   1.35,
   escena,
 );
-linterna.intensity = 8;
+linterna.intensity = 0;
 linterna.range = 30;
 linterna.diffuse = new Color3(1, 0.94, 0.76);
 const brilloLinterna = new PointLight(
@@ -206,27 +248,88 @@ const brilloLinterna = new PointLight(
 brilloLinterna.diffuse = new Color3(1, 0.82, 0.56);
 brilloLinterna.range = 7;
 brilloLinterna.intensity = 0.55;
-linterna.intensity = state.flashlight && state.battery > 0 ? 8 : 0;
-brilloLinterna.intensity = state.flashlight && state.battery > 0 ? 0.55 : 0;
+linterna.intensity = state.inventory.flashlight && state.flashlight && state.battery > 0 ? 8 : 0;
+brilloLinterna.intensity = state.inventory.flashlight && state.flashlight && state.battery > 0 ? 0.2 : 0;
+const pistaLinterna = MeshBuilder.CreateCylinder("flashlight ground cue", { height: 0.01, diameter: 2.4, tessellation: 24 }, escena);
+const materialPistaLinterna = new StandardMaterial("flashlight ground cue material", escena);
+materialPistaLinterna.diffuseColor = Color3.FromHexString("#e7c783");
+materialPistaLinterna.emissiveColor = Color3.FromHexString("#5d4828");
+materialPistaLinterna.alpha = 0.16;
+materialPistaLinterna.disableLighting = true;
+pistaLinterna.material = materialPistaLinterna;
+pistaLinterna.isPickable = false;
+pistaLinterna.isVisible = false;
 const destelloBoca = new PointLight("rifle muzzle flash", new Vector3(), escena);
 destelloBoca.diffuse = new Color3(1, 0.72, 0.28);
 destelloBoca.intensity = 7;
 destelloBoca.range = 8;
 destelloBoca.setEnabled(false);
 const mundo = construirMundo(escena, state.settings?.quality || "high");
+jugador.camera.angularSensibility = 3800 / state.settings.sensitivity;
+function crearArmasEnPrimeraPersona() {
+  const crearMaterialArma = (nombre, color) => {
+    const material = new StandardMaterial(nombre, escena);
+    material.diffuseColor = Color3.FromHexString(color);
+    material.specularColor = Color3.Black();
+    return material;
+  };
+  const madera = crearMaterialArma("weapon wood", "#5b3922");
+  const metal = crearMaterialArma("weapon metal", "#71817d");
+  const hoja = crearMaterialArma("knife blade", "#b9c9c4");
+  const crearParte = (nombre, options, padre, posicion, material) => {
+    const parte = MeshBuilder.CreateBox(nombre, options, escena);
+    parte.parent = padre;
+    parte.position.copyFrom(posicion);
+    parte.material = material;
+    parte.isPickable = false;
+    return parte;
+  };
+  const rifle = crearParte("first person rifle", { width: 0.15, height: 0.15, depth: 0.86 }, jugador.camera, new Vector3(0.43, -0.39, 0.78), madera);
+  rifle.rotation.y = -0.08;
+  crearParte("first person rifle barrel", { width: 0.07, height: 0.07, depth: 0.76 }, rifle, new Vector3(0, 0.05, -0.72), metal);
+  crearParte("first person rifle stock", { width: 0.23, height: 0.19, depth: 0.35 }, rifle, new Vector3(0, -0.05, 0.42), madera);
+  const knife = crearParte("first person knife", { width: 0.07, height: 0.05, depth: 0.56 }, jugador.camera, new Vector3(0.48, -0.4, 0.65), hoja);
+  knife.rotation.y = -0.42;
+  crearParte("first person knife handle", { width: 0.12, height: 0.09, depth: 0.2 }, knife, new Vector3(0, 0, 0.34), madera);
+  return { rifle, knife };
+}
+const armasPrimeraPersona = crearArmasEnPrimeraPersona();
+function actualizarArmaEquipada() {
+  const equipada = state.inventory[state.equippedWeapon] ? state.equippedWeapon : null;
+  armasPrimeraPersona.rifle.setEnabled(equipada === "rifle");
+  armasPrimeraPersona.knife.setEnabled(equipada === "knife");
+  document.querySelector("#weapon-hud").textContent = `ARMA: ${equipada === "rifle" ? "RIFLE" : equipada === "knife" ? "CUCHILLO" : "NINGUNA"}`;
+}
+function alternarArmaEquipada() {
+  const disponibles = ["knife", "rifle"].filter((arma) => state.inventory[arma]);
+  if (!disponibles.length) return mostrarAviso("No tienes un arma equipada.");
+  const indice = disponibles.indexOf(state.equippedWeapon);
+  state.equippedWeapon = disponibles[(indice + 1) % disponibles.length];
+  actualizarArmaEquipada();
+  guardarPartida(state);
+  mostrarAviso(`Arma equipada: ${state.equippedWeapon === "rifle" ? "rifle" : "cuchillo"}.`);
+}
 function capituloDisponible(capitulo) {
   return capitulo === 2 ? state.chapter2 : Boolean(state[`chapter${capitulo}`]);
 }
 function actualizarObjetosCapitulo() {
   mundo.pickups
     .filter((recogible) => recogible.metadata.chapter)
-    .forEach((recogible) => recogible.setEnabled(capituloDisponible(recogible.metadata.chapter)));
+      .forEach((recogible) => {
+        const disponible = capituloDisponible(recogible.metadata.chapter);
+        recogible.setEnabled(disponible);
+        recogible.metadata.luzObjetivo?.setEnabled(disponible);
+      });
+  actualizarBalizasSenal();
 }
-mundo.pickups
-  .filter((recogible) => recogible.metadata.chapter)
-  .forEach((recogible) =>
-    recogible.setEnabled(capituloDisponible(recogible.metadata.chapter)),
-  );
+function actualizarBalizasSenal() {
+  mundo.signalBeacons.forEach((baliza) => {
+    const activa = baliza.metadata.id === state.mission.phase;
+    baliza.setEnabled(activa);
+    baliza.metadata.light.intensity = activa ? 5 : 0;
+  });
+}
+actualizarObjetosCapitulo();
 if (state.chapter2 && state.mission.phase !== "epilogue")
   jugador.camera.position.set(
     mundo.stationPoint.x,
@@ -242,6 +345,9 @@ mundo.campfires.forEach((fogata) => actualizarFogataVisual(fogata));
 mundo.pickups
   .filter((malla) => state.collected.includes(malla.metadata.id))
   .forEach((malla) => malla.dispose());
+mundo.traps.forEach((trampa) => {
+  if (state.triggeredTraps.includes(trampa.metadata.id)) trampa.setEnabled(false);
+});
 
 // Muestra un aviso temporal en pantalla.
 function mostrarAviso(texto) {
@@ -312,25 +418,27 @@ function consumirObjeto(tipo, cantidad = 1) {
 }
 // Aplica consumibles desde mochila sin convertir la supervivencia en una penalización constante.
 function usarConsumible(tipo) {
+  if (pausado) return;
   const efectos = {
     medkit: ["health", 55, "Usaste un botiquín."],
     bandage: ["health", 25, "Vendaste la herida."],
     cannedFood: ["hunger", 30, "Comiste una conserva."],
     water: ["hunger", 24, "Bebiste agua potable."],
     berries: ["hunger", 18, "Comiste frutas silvestres."],
+    cookedMeat: ["hunger", 60, "Comiste carne cocinada. El hambre bajará más despacio durante un rato."],
   };
   if (tipo === "battery") return reemplazarBateria();
-  if (tipo === "ammoMagazine") {
-    if (!consumirObjeto(tipo)) return;
-    state.inventory.ammo = (state.inventory.ammo || 0) + 3;
-    mostrarAviso("Abriste el cargador: 3 cartuchos a reserva.");
-  } else if (tipo === "map") {
+  if (tipo === "map") {
     mostrarNota("Rutas seguras: cabaña, torre, refugio del cazador y estación. Una anotación menciona el receptor de campo: cable + herramienta.", "Mapa de rutas");
     return;
   } else {
     const efecto = efectos[tipo];
-    if (!efecto || !consumirObjeto(tipo)) return;
+    if (!efecto) return;
+    if (efecto[0] === "hunger" && state.hunger >= 100)
+      return mostrarAviso("Estás completamente saciado: la comida queda guardada.");
+    if (!consumirObjeto(tipo)) return;
     state[efecto[0]] = Math.min(100, state[efecto[0]] + efecto[1]);
+    if (tipo === "cookedMeat") state.satiatedUntil = Date.now() + CONFIG.hambre.duracionBeneficioCarneCocidaSegundos * 1000;
     mostrarAviso(efecto[2]);
   }
   activarAudio();
@@ -360,32 +468,57 @@ function actualizarIndicadorRifle() {
   document.querySelector("#ammo-hud").hidden = !tieneRifle;
   document.querySelector("#rifle-ammo").textContent = `${state.rifleAmmo} / 3`;
   document.querySelector("#ammo-reserve").textContent =
-    `${state.inventory.ammo || 0} RESERVA`;
+    `${state.inventory.ammoMagazine || 0} CARGADORES`;
 }
-// Busca el objeto interactuable más cercano al jugador.
+// Muestra una respuesta corta de impacto sin bloquear la vista ni los controles.
+function mostrarEfectoCombate(tipo) {
+  const efecto = document.querySelector("#combat-effect");
+  efecto.className = `combat-effect ${tipo}`;
+  window.setTimeout(() => {
+    if (efecto.classList.contains(tipo)) efecto.className = "combat-effect";
+  }, tipo === "shot" ? 140 : 200);
+}
+// Prioriza el objeto que ocupa el centro de la mira y nunca atraviesa geometría.
 function actualizarCercano() {
   cercaSalida =
     !state.chapter2 &&
     state.mission.phase === "radio" &&
-    Vector3.Distance(jugador.camera.position, puntoEscape) < 4.5;
+    Vector3.Distance(jugador.camera.position, puntoEscape) < 8;
   masCercano = null;
-  // Los elementos de misión deben seguir siendo utilizables aunque el bosque
-  // o la geometría del edificio obliguen a acercarse desde un lateral.
-  let distancia = 9;
-  const adelante = jugador.camera.getDirection(Vector3.Forward());
-  interactuables.forEach((malla) => {
-    if (!malla.isDisposed() && malla.isEnabled()) {
-      const desplazamiento = malla.position.subtract(jugador.camera.position);
-      const actual = desplazamiento.length();
-      if (
-        actual < distancia &&
-        Vector3.Dot(adelante, desplazamiento.normalize()) > -0.35
-      ) {
-        masCercano = malla;
-        distancia = actual;
-      }
+  const esInteractuable = (malla) =>
+    interactuables.includes(malla) &&
+    !malla.isDisposed() &&
+    malla.isEnabled() &&
+    malla.isVisible;
+  const obtenerRaizInteractuable = (malla) => {
+    let actual = malla;
+    while (actual) {
+      if (esInteractuable(actual)) return actual;
+      actual = actual.parent;
     }
-  });
+    return null;
+  };
+  const adelante = jugador.camera.getDirection(Vector3.Forward());
+  const rayoCentral = new Ray(jugador.camera.position, adelante, CONFIG.interaccion.alcanceMision);
+  const impactoCentral = escena.pickWithRay(
+    rayoCentral,
+    (malla) => malla.isPickable && malla.isEnabled() && malla.isVisible,
+  );
+  if (impactoCentral?.hit) masCercano = obtenerRaizInteractuable(impactoCentral.pickedMesh);
+  if (!masCercano) {
+    // Fogatas y transmisores conservan una pequeña ayuda por proximidad, pero solo con línea de visión.
+    masCercano = interactuables.find((malla) => {
+      if (!esInteractuable(malla) || !["campfire", "transmitter"].includes(malla.metadata.type)) return false;
+      const objetivo = malla.getAbsolutePosition().subtract(jugador.camera.position);
+      const distancia = objetivo.length();
+      if (distancia > CONFIG.interaccion.alcanceMision) return false;
+      const impacto = escena.pickWithRay(
+        new Ray(jugador.camera.position, objetivo.scale(1 / distancia), distancia + 0.15),
+        (mesh) => mesh.isPickable && mesh.isEnabled() && mesh.isVisible,
+      );
+      return impacto?.hit && obtenerRaizInteractuable(impacto.pickedMesh) === malla;
+    }) || null;
+  }
   const aviso = document.querySelector("#interaction");
    aviso.textContent = cercaSalida
     ? "[E] ACTIVAR RADIO DE EMERGENCIA"
@@ -402,7 +535,7 @@ function posicionSoltar() {
   return jugador.camera.position.add(adelante.scale(1.25));
 }
 // Crea en el suelo un objeto descartado por el jugador.
-function soltarObjeto(tipo, etiqueta, textoNota = "") {
+function soltarObjeto(tipo, etiqueta, textoNota = "", documentoDescartado = null) {
   const id = `dropped-${tipo}-${Date.now()}`;
   const posicion = posicionSoltar();
   const desplazamiento =
@@ -412,7 +545,7 @@ function soltarObjeto(tipo, etiqueta, textoNota = "") {
       battery: 0.36,
       knife: 0.1,
       rifle: 0.12,
-      ammo: 0.15,
+       ammoMagazine: 0.15,
     }[tipo] || 0.24;
   posicion.y = mundo.alturaTerreno(posicion.x, posicion.z) + desplazamiento;
   const recogible = crearRecogible(
@@ -424,6 +557,7 @@ function soltarObjeto(tipo, etiqueta, textoNota = "") {
     "Recuperaste el objeto descartado.",
     textoNota,
   );
+  recogible.metadata.documentoDescartado = documentoDescartado;
   interactuables.push(recogible);
 }
 // Abre el lector de notas con un título y contenido.
@@ -445,7 +579,7 @@ function cerrarNota() {
 // Enciende o apaga la linterna según la batería disponible.
 function configurarLinterna(activa) {
   const estabaActiva = state.flashlight;
-  state.flashlight = Boolean(activa && state.battery > 0);
+  state.flashlight = Boolean(activa && state.inventory.flashlight && state.battery > 0 && !visionNocturnaActiva);
   const alcanceLargo = state.settings.flashlightMode === "long";
   linterna.intensity = state.flashlight ? (alcanceLargo ? 12 : 8) : 0;
   brilloLinterna.intensity = state.flashlight ? (alcanceLargo ? 0.22 : 0.55) : 0;
@@ -456,6 +590,7 @@ function configurarLinterna(activa) {
 }
 // Alterna el estado de la linterna.
 function alternarLinterna() {
+  if (!state.inventory.flashlight) return mostrarAviso("Necesitas recoger una linterna.");
   if (state.flashlight) return configurarLinterna(false);
   if (state.battery <= 0) return mostrarAviso("La linterna no tiene batería.");
   configurarLinterna(true);
@@ -475,15 +610,19 @@ function alternarModoLinterna() {
 }
 // Alinea las luces de la linterna con la cámara.
 function actualizarLinterna() {
-  const activa = state.flashlight && state.battery > 0;
+  const activa = state.inventory.flashlight && state.flashlight && state.battery > 0 && !visionNocturnaActiva;
   const alcanceLargo = state.settings.flashlightMode === "long";
-  linterna.angle = alcanceLargo ? Math.PI / 10 : Math.PI / 2.5;
-  linterna.range = alcanceLargo ? 78 : 30;
-  linterna.intensity = activa ? (alcanceLargo ? 12 : 8) : 0;
-  brilloLinterna.intensity = activa ? (alcanceLargo ? 0.22 : 0.55) : 0;
+  linterna.angle = alcanceLargo ? Math.PI / 14 : Math.PI / 5;
+  linterna.range = alcanceLargo ? 92 : 42;
+  linterna.intensity = activa ? (alcanceLargo ? 11 : 7.5) : 0;
+  brilloLinterna.intensity = activa ? 0.12 : 0;
   const adelante = jugador.camera.getDirection(Vector3.Forward());
   linterna.position.copyFrom(jugador.camera.position.add(adelante.scale(0.18)));
   linterna.direction.copyFrom(adelante);
+  const puntoHaz = jugador.camera.position.add(adelante.scale(alcanceLargo ? 7 : 4));
+  pistaLinterna.position.set(puntoHaz.x, mundo.alturaTerreno(puntoHaz.x, puntoHaz.z) + 0.018, puntoHaz.z);
+  pistaLinterna.scaling.set(alcanceLargo ? 1.5 : 1, 1, alcanceLargo ? 2.3 : 1.45);
+  pistaLinterna.isVisible = activa;
   brilloLinterna.position.copyFrom(
     jugador.camera.position.add(adelante.scale(0.12)),
   );
@@ -491,6 +630,25 @@ function actualizarLinterna() {
     jugador.camera.position.add(adelante.scale(0.55)),
   );
   destelloBoca.setEnabled(performance.now() < destelloHasta);
+}
+function alternarVisionNocturna() {
+  if (!state.inventory.binoculars) return mostrarAviso("Necesitas unos binoculares de visión nocturna.");
+  visionNocturnaActiva = !visionNocturnaActiva;
+  if (visionNocturnaActiva) {
+    linternaAntesDeVision = state.flashlight;
+    fovAntesDeVision = jugador.camera.fov;
+    configurarLinterna(false);
+    jugador.camera.fov = fovAntesDeVision * 0.72;
+    document.querySelector("#night-vision-overlay").hidden = false;
+    mostrarAviso("Visión nocturna activada. La linterna queda apagada.");
+  } else {
+    jugador.camera.fov = fovAntesDeVision ?? jugador.camera.fov;
+    fovAntesDeVision = null;
+    document.querySelector("#night-vision-overlay").hidden = true;
+    configurarLinterna(linternaAntesDeVision);
+    mostrarAviso("Visión nocturna desactivada.");
+  }
+  document.querySelector("#night-vision-status").hidden = !visionNocturnaActiva;
 }
 // Alterna la calidad visual y reinicia la escena.
 function alternarCalidad() {
@@ -537,12 +695,30 @@ function cerrarMochila() {
 // Detiene o reanuda las actualizaciones del juego.
 function alternarPausa() {
   pausado = !pausado;
+  document.querySelector("#pause-modal").hidden = !pausado;
+  if (pausado) {
+    document.querySelector("#settings-panel").hidden = true;
+    document.querySelector("#pause-actions").hidden = false;
+  }
+  if (pausado && controlesCamaraAdjuntos) {
+    jugador.camera.detachControl();
+    controlesCamaraAdjuntos = false;
+  } else if (!pausado && !controlesCamaraAdjuntos) {
+    jugador.camera.attachControl(lienzo, true);
+    controlesCamaraAdjuntos = true;
+  }
   if (gananciaPrincipal && contextoAudio) {
     gananciaPrincipal.gain.setTargetAtTime(
-      pausado ? 0 : 1,
+      pausado ? 0 : state.settings.audio.master,
       contextoAudio.currentTime,
       0.03,
     );
+    if (pausado) contextoAudio.suspend().catch(() => {});
+    else contextoAudio.resume().catch(() => {});
+  }
+  if ("speechSynthesis" in window) {
+    if (pausado) window.speechSynthesis.pause();
+    else window.speechSynthesis.resume();
   }
   teclasPulsadas.clear();
   Object.keys(entradaTactil).forEach((tecla) => (entradaTactil[tecla] = false));
@@ -550,6 +726,31 @@ function alternarPausa() {
     ? "CONTINUAR [P]"
     : "PAUSA [P]";
   mostrarAviso(pausado ? "Juego en pausa. Pulsa P para continuar." : "Juego reanudado.");
+}
+function actualizarAjustes() {
+  const sensibilidad = Math.round(state.settings.sensitivity * 100);
+  const volumen = Math.round(state.settings.audio.master * 100);
+  document.querySelector("#sensitivity-setting").value = sensibilidad;
+  document.querySelector("#sensitivity-value").textContent = `${sensibilidad}%`;
+  document.querySelector("#volume-setting").value = volumen;
+  document.querySelector("#volume-value").textContent = `${volumen}%`;
+}
+function cambiarSensibilidad(valor) {
+  state.settings.sensitivity = Number(valor) / 100;
+  jugador.camera.angularSensibility = 3800 / state.settings.sensitivity;
+  actualizarAjustes();
+  guardarPartida(state);
+}
+function cambiarVolumen(valor) {
+  state.settings.audio.master = Number(valor) / 100;
+  if (gananciaPrincipal && contextoAudio)
+    gananciaPrincipal.gain.setTargetAtTime(
+      pausado ? 0 : state.settings.audio.master,
+      contextoAudio.currentTime,
+      0.03,
+    );
+  actualizarAjustes();
+  guardarPartida(state);
 }
 // Guarda el progreso actual de forma manual.
 function guardarPartidaActual() {
@@ -578,6 +779,7 @@ function actualizarMinimapa() {
 }
 // Gestiona la progresión de misiones y los objetos recogibles.
 function interactuar() {
+  if (pausado) return;
   if (notaAbierta) return;
   if (cercaSalida) {
     if (!state.inventory.radioFuse)
@@ -598,6 +800,8 @@ function interactuar() {
     );
     jugador.camera.rotation.set(0, Math.PI, 0);
     actualizarObjetivo();
+    activarAudio();
+    reproducirTono("effects", 680, 0.24, 0.08);
     mostrarAviso("La radio responde. Capítulo II: entra en la estación de bombeo.");
     return;
   }
@@ -624,9 +828,16 @@ function interactuar() {
       reproducirRuido(0.18, 0.05, 650);
       return mostrarAviso("La fogata ilumina el refugio. La criatura evita su luz.");
     }
+    if (state.inventory.rawMeat) {
+      consumirObjeto("rawMeat");
+      agregarObjeto(state, "cookedMeat");
+      renderizarInventario(state);
+      guardarPartida(state);
+      return mostrarAviso("Cocinaste carne de caza. Úsala desde la mochila cuando tengas hambre.");
+    }
     state.energy = Math.min(100, state.energy + 24);
     state.health = Math.min(100, state.health + 8);
-    if (consumirObjeto("cannedFood")) {
+    if (state.inventory.cannedFood && state.hunger < 100 && consumirObjeto("cannedFood")) {
       state.hunger = Math.min(100, state.hunger + 52);
       mostrarAviso("Descansaste y calentaste una conserva.");
     } else mostrarAviso("Descansaste al calor de la fogata.");
@@ -643,6 +854,15 @@ function interactuar() {
     masCercano.dispose(); masCercano = null;
     renderizarInventario(state); renderizarBitacora(state); guardarPartida(state);
     return mostrarNota(textoNota, etiqueta);
+  }
+  if (tipo === "note" && masCercano.metadata.documentoDescartado) {
+    const documento = masCercano.metadata.documentoDescartado;
+    state.documents.push(documento);
+    agregarObjeto(state, "note");
+    state.collected.push(id);
+    masCercano.dispose(); masCercano = null;
+    renderizarInventario(state); guardarPartida(state);
+    return mostrarNota(documento.text, documento.title);
   }
   if (tipo === "receiver") {
     if (state.receiverRepaired) return mostrarAviso("El receptor ya emite la frecuencia anotada en el mapa.");
@@ -667,6 +887,15 @@ function interactuar() {
     mostrarNota(grabacionDaniel, "Grabación de Daniel");
     reproducirGrabacionDaniel();
     return;
+  }
+  if (tipo === "telescope") {
+    if (!state.telescopeObserved) {
+      state.telescopeObserved = true;
+      state.journal.push("Desde el telescopio, la estación de bombeo queda al noroeste; Valleverde se abre hacia el oeste, tras el río.");
+      renderizarBitacora(state);
+      guardarPartida(state);
+    }
+    return mostrarNota("Al noroeste, una luz fría pulsa sobre la estación de bombeo. Más al oeste, las calles de Valleverde quedan ocultas tras el río. Daniel anotó: «No sigas el agua de noche».", "Observación del refugio");
   }
   if (tipo === "radioFuse" && state.mission.phase !== "radio-fuse")
     return mostrarAviso("Sigue las pistas de Daniel antes de buscar el fusible.");
@@ -813,13 +1042,21 @@ function interactuar() {
     actualizarBateria();
     return mostrarAviso("Instalaste la batería y encendiste la linterna.");
   }
-   const cantidad = tipo === "ammo" ? (state.inventory.ammo ? 0 : 1) : 1;
+   const cantidad = 1;
   if (pesoInventario(state) + cantidad > 12)
     return mostrarAviso("La mochila está llena. No puedes cargar más objetos.");
   if (tipo === "rifle") {
     agregarObjeto(state, "rifle");
     state.rifleAmmo = 3;
-   } else agregarObjeto(state, tipo, tipo === "ammo" ? 3 : 1);
+    if (!state.inventory.knife) state.equippedWeapon = "rifle";
+  } else {
+    agregarObjeto(state, tipo);
+    if (tipo === "knife") state.equippedWeapon = "knife";
+  }
+  if (tipo === "flashlight") {
+    state.flashlightAcquired = true;
+    configurarLinterna(true);
+  }
   if (tipo === "radioFuse") state.mission.phase = "radio";
   if (tipo === "card") state.mission.phase = "industrial-fuses";
   if (tipo === "industrialFuse" && (state.inventory.industrialFuse || 0) >= 3)
@@ -831,6 +1068,7 @@ function interactuar() {
   renderizarInventario(state);
   renderizarBitacora(state);
   actualizarIndicadorRifle();
+  actualizarArmaEquipada();
   guardarPartida(state);
    activarAudio();
    reproducirTono("effects", 580, 0.06, 0.04);
@@ -840,17 +1078,24 @@ function interactuar() {
 }
 // Elimina un objeto del inventario y lo deja en el suelo.
 function descartarObjeto(tipo) {
+  if (pausado) return;
   if (!state.inventory[tipo]) return;
-  if (["radioFuse", "industrialFuse", "card", "key", "tool", "cable"].includes(tipo))
+  if (["radioFuse", "industrialFuse", "card", "key", "tool", "cable", "knife", "rifle"].includes(tipo))
     return mostrarAviso("No puedes tirar un objeto necesario para la misión.");
   const etiqueta =
     tipo === "wood"
       ? "Ramas secas"
       : tipo === "berries"
         ? "Bayas oscuras"
+        : tipo === "ammoMagazine"
+          ? "Cargador de rifle"
         : "Batería de linterna";
   state.inventory[tipo]--;
   if (!state.inventory[tipo]) delete state.inventory[tipo];
+  if (tipo === state.equippedWeapon && !state.inventory[tipo]) {
+    state.equippedWeapon = state.inventory.knife ? "knife" : "rifle";
+    actualizarArmaEquipada();
+  }
   soltarObjeto(tipo, etiqueta);
   renderizarInventario(state);
   guardarPartida(state);
@@ -863,7 +1108,7 @@ function descartarNota(id) {
   const [documento] = state.documents.splice(indice, 1);
   state.inventory.note--;
   if (!state.inventory.note) delete state.inventory.note;
-  soltarObjeto("note", documento.title, documento.text);
+  soltarObjeto("note", documento.title, documento.text, documento);
   renderizarInventario(state);
   guardarPartida(state);
   mostrarAviso("La nota quedó en el suelo junto a ti.");
@@ -894,8 +1139,7 @@ function estadoEntrada() {
         teclasPulsadas.has("ShiftRight")),
     crouch:
       entradaTactil.crouch ||
-      teclasPulsadas.has("ControlLeft") ||
-      teclasPulsadas.has("ControlRight"),
+      teclasPulsadas.has("KeyC"),
     jump: entradaTactil.jump || teclasPulsadas.has("Space"),
   };
 }
@@ -904,7 +1148,7 @@ function activarAudio() {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   if (!AudioContext) return;
   contextoAudio ||= new AudioContext();
-  contextoAudio.resume().catch(() => {});
+  if (!pausado) contextoAudio.resume().catch(() => {});
   if (!gananciaPrincipal) {
     gananciaPrincipal = contextoAudio.createGain();
      gananciaPrincipal.gain.value = pausado ? 0 : state.settings.audio.master;
@@ -1085,23 +1329,20 @@ function actualizarPasos(controles) {
   oscilador.start();
   oscilador.stop(contextoAudio.currentTime + 0.1);
 }
-// Recarga el rifle usando la munición de reserva.
+// Cambia un cargador completo para no crear ni perder cartuchos sueltos.
 function recargarRifle() {
+  if (pausado) return;
   if (!state.inventory.rifle)
     return mostrarAviso("Necesitas encontrar el rifle de caza.");
-  const necesarias = 3 - state.rifleAmmo;
-  if (!necesarias) return mostrarAviso("El cargador ya está lleno.");
-  if (!state.inventory.ammo) return mostrarAviso("No tienes munición de reserva.");
-  const cargadas = Math.min(necesarias, state.inventory.ammo);
-  state.rifleAmmo += cargadas;
-  state.inventory.ammo -= cargadas;
-  if (!state.inventory.ammo) delete state.inventory.ammo;
+  if (state.rifleAmmo) return mostrarAviso("Termina el cargador antes de cambiarlo.");
+  if (!consumirObjeto("ammoMagazine")) return mostrarAviso("No tienes cargadores de rifle.");
+  state.rifleAmmo = 3;
   activarAudio();
   reproducirSonidoRecarga();
   renderizarInventario(state);
   actualizarIndicadorRifle();
   guardarPartida(state);
-  mostrarAviso(`Recargaste ${cargadas} bala${cargadas === 1 ? "" : "s"}.`);
+  mostrarAviso("Cargador instalado: 3 balas.");
 }
 // Reproduce el sonido mecánico de recargar el rifle.
 function reproducirSonidoRecarga() {
@@ -1131,9 +1372,15 @@ function usarCuchillo() {
   const ahora = performance.now();
   if (ahora - ultimoDisparo < 500) return;
   ultimoDisparo = ahora;
+  mostrarEfectoCombate("slash");
   activarAudio();
   reproducirRuido(0.06, 0.08, 1250);
   const adelante = jugador.camera.getDirection(Vector3.Forward());
+  const presa = mundo.animals.find((animal) => {
+    const hacia = animal.position.subtract(jugador.camera.position);
+    return !animal.metadata.dead && ["deer", "fox"].includes(animal.metadata.type) && hacia.length() < 3.4 && Vector3.Dot(adelante, hacia.normalize()) > 0.25;
+  });
+  if (presa) return herirAnimal(presa, 1, "El animal se aleja herido.");
   const objetivo = criatura.position.subtract(jugador.camera.position);
   const distancia = objetivo.length();
   if (
@@ -1153,6 +1400,18 @@ function usarCuchillo() {
   }
   mostrarAviso("El cuchillo corta el aire.");
 }
+function herirAnimal(animal, dano, aviso) {
+  animal.metadata.health -= dano;
+  if (animal.metadata.health > 0) return mostrarAviso(`${aviso} (${animal.metadata.health}/5)`);
+  animal.metadata.dead = true;
+  animal.setEnabled(false);
+  state.killedWildlife.push(animal.metadata.id);
+  const id = `meat-${animal.metadata.id}`;
+  const loot = crearRecogible(escena, id, "rawMeat", animal.position.clone(), "Carne cruda de caza", "Recogiste carne cruda; cocínala en una fogata encendida.");
+  interactuables.push(loot);
+  guardarPartida(state);
+  mostrarAviso("La presa cayó. Dejó carne cruda para cocinar.");
+}
 // Consume un botiquín y recupera salud.
 function usarBotiquin() {
   usarConsumible("medkit");
@@ -1161,11 +1420,12 @@ function usarBotiquin() {
 function dispararRifle() {
   if (!state.inventory.rifle)
     return mostrarAviso("Necesitas encontrar el rifle de caza.");
-  if (!state.rifleAmmo) return recargarRifle();
+  if (!state.rifleAmmo) return mostrarAviso("Rifle vacío. Pulsa R para instalar un cargador.");
   const ahora = performance.now();
   if (ahora - ultimoDisparo < 450) return;
   ultimoDisparo = ahora;
   state.rifleAmmo--;
+  mostrarEfectoCombate("shot");
   actualizarIndicadorRifle();
   guardarPartida(state);
   destelloHasta = ahora + 70;
@@ -1190,6 +1450,14 @@ function dispararRifle() {
     oscilador.stop(contextoAudio.currentTime + 0.17);
   }
   const adelante = jugador.camera.getDirection(Vector3.Forward());
+  const presa = mundo.animals.find((animal) => {
+    const hacia = animal.position.subtract(jugador.camera.position);
+    return !animal.metadata.dead && ["deer", "fox"].includes(animal.metadata.type) && hacia.length() < 35 && Vector3.Dot(adelante, hacia.normalize()) > 0.88;
+  });
+  if (presa) {
+    herirAnimal(presa, 5, "Impacto de rifle.");
+    return;
+  }
   const objetivo = criatura.position.subtract(jugador.camera.position);
   const distancia = objetivo.length();
   if (
@@ -1212,6 +1480,32 @@ function dispararRifle() {
     mostrarAviso(`El disparo resonó. Cargador: ${state.rifleAmmo}/3.`);
   }
 }
+function usarArmaEquipada() {
+  if (state.equippedWeapon === "rifle") return dispararRifle();
+  if (state.equippedWeapon === "knife") return usarCuchillo();
+  mostrarAviso("No tienes un arma equipada.");
+}
+// Wildlife is deliberately sparse and stays in clear areas away from objectives.
+function actualizarFauna(delta) {
+  const tiempo = performance.now() * 0.001;
+  mundo.animals.forEach((animal) => {
+    if (state.killedWildlife.includes(animal.metadata.id)) {
+      animal.metadata.dead = true; animal.setEnabled(false); return;
+    }
+    const { type, home, phase } = animal.metadata;
+    const radio = type === "deer" ? 4 : type === "fox" ? 3 : type === "bat" ? 5 : 2;
+    if (type === "firefly") {
+      animal.position.set(home.x + Math.cos(tiempo + phase) * radio, home.y + Math.sin(tiempo * 2 + phase) * 0.65, home.z + Math.sin(tiempo + phase) * radio);
+    } else if (type === "bat") {
+      animal.position.set(home.x + Math.cos(tiempo * 1.4 + phase) * radio, home.y + 3 + Math.sin(tiempo * 3 + phase), home.z + Math.sin(tiempo * 1.4 + phase) * radio);
+    } else if (!animal.metadata.dead) {
+      const x = home.x + Math.cos(tiempo * 0.35 + phase) * radio;
+      const z = home.z + Math.sin(tiempo * 0.35 + phase) * radio;
+      animal.position.set(x, mundo.alturaTerreno(x, z) + (type === "deer" ? 0.8 : 0.42), z);
+      animal.rotation.y = -tiempo * 0.35 - phase;
+    }
+  });
+}
 // Abre el mapa ampliado.
 function abrirMapa() {
   document.querySelector("#world-map").hidden = false;
@@ -1224,6 +1518,46 @@ function actualizarFogataVisual(fogata) {
   const encendida = Boolean(state.fires[fogata.metadata.id]);
   fogata.metadata.flame.setEnabled(encendida);
   fogata.metadata.light.intensity = encendida ? 2.6 : 0;
+}
+function abrirTrampa(trampa) {
+  atrapado = true;
+  minijuegoTrampa = { trampa, sequence: ["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"], index: 0, deadline: performance.now() + 12000, started: false };
+  document.querySelector("#trap-modal").hidden = false;
+  document.querySelector("#trap-status").textContent = state.inventory.knife
+    ? "Tienes un cuchillo: puedes cortar la cuerda, o pulsar E para iniciar la secuencia."
+    : "Pulsa E para iniciar la secuencia de liberación.";
+  mostrarAviso("Una trampa de cuerda te inmovilizó.");
+}
+function liberarTrampa(mensaje) {
+  if (!minijuegoTrampa) return;
+  const { trampa } = minijuegoTrampa;
+  state.triggeredTraps.push(trampa.metadata.id);
+  trampa.setEnabled(false);
+  atrapado = false; minijuegoTrampa = null;
+  document.querySelector("#trap-modal").hidden = true;
+  guardarPartida(state); mostrarAviso(mensaje);
+}
+function iniciarMinijuegoTrampa() {
+  if (!minijuegoTrampa) return;
+  minijuegoTrampa.started = true;
+  document.querySelector("#trap-status").textContent = "Secuencia: ARRIBA, DERECHA, ABAJO, IZQUIERDA. Tienes 12 segundos.";
+}
+function cortarTrampa() {
+  if (!minijuegoTrampa || !state.inventory.knife) return;
+  liberarTrampa("Cortaste la cuerda con el cuchillo. La trampa quedó inutilizada.");
+}
+function actualizarTrampas() {
+  if (atrapado && minijuegoTrampa && performance.now() > minijuegoTrampa.deadline) {
+    const atras = jugador.camera.getDirection(Vector3.Forward()).scale(-14);
+    criatura.position.copyFrom(jugador.camera.position.add(atras));
+    criatura.position.y = mundo.alturaTerreno(criatura.position.x, criatura.position.z) + 1.4;
+    criatura.metadata.state = "suspicious";
+    liberarTrampa("La cuerda cedió tarde. Algo aparece a una distancia segura entre los árboles.");
+    return;
+  }
+  if (atrapado) return;
+  const trampa = mundo.traps.find((item) => item.isEnabled() && Vector3.Distance(item.position, jugador.camera.position) < item.metadata.radius);
+  if (trampa) abrirTrampa(trampa);
 }
 function cercaFogataEncendida(posicion, radio = 16) {
   return mundo.campfires.some((fogata) => state.fires[fogata.metadata.id] && Vector3.Distance(posicion, fogata.position) < radio);
@@ -1339,6 +1673,7 @@ renderizarBitacora(state);
 actualizarSignosVitales();
 actualizarBateria();
 actualizarIndicadorRifle();
+actualizarArmaEquipada();
 actualizarObjetivo();
 if (state.mission.phase === "epilogue") {
   escapo = true;
@@ -1364,6 +1699,27 @@ document
   .querySelector("#backpack-button")
   .addEventListener("click", abrirMochila);
 document.querySelector("#pause-button").addEventListener("click", alternarPausa);
+document.querySelector("#resume-game").addEventListener("click", alternarPausa);
+document.querySelector("#restart-story").addEventListener("click", () => {
+  if (!window.confirm("Se eliminará la partida guardada y volverás al inicio. ¿Continuar?")) return;
+  borrarPartida();
+  window.location.reload();
+});
+document.querySelector("#open-settings").addEventListener("click", () => {
+  actualizarAjustes();
+  document.querySelector("#pause-actions").hidden = true;
+  document.querySelector("#settings-panel").hidden = false;
+});
+document.querySelector("#close-settings").addEventListener("click", () => {
+  document.querySelector("#settings-panel").hidden = true;
+  document.querySelector("#pause-actions").hidden = false;
+});
+document
+  .querySelector("#sensitivity-setting")
+  .addEventListener("input", (event) => cambiarSensibilidad(event.target.value));
+document
+  .querySelector("#volume-setting")
+  .addEventListener("input", (event) => cambiarVolumen(event.target.value));
 document
   .querySelector("#close-backpack")
   .addEventListener("click", cerrarMochila);
@@ -1385,6 +1741,8 @@ document
     "click",
     () => (document.querySelector("#battery-modal").hidden = true),
   );
+document.querySelector("#cut-trap").addEventListener("click", cortarTrampa);
+document.querySelector("#start-trap").addEventListener("click", iniciarMinijuegoTrampa);
 document.querySelector("#restart-game").addEventListener("click", () => {
   if (state.mission.phase === "epilogue") {
     borrarPartida();
@@ -1423,6 +1781,7 @@ document.querySelector("#next-chapter").addEventListener("click", () => {
   );
 });
 document.querySelector("#items").addEventListener("click", (event) => {
+  if (pausado) return;
   const read = event.target.closest("[data-read-note]");
   const deleteNote = event.target.closest("[data-delete-note]");
   const use = event.target.closest("[data-use-item]");
@@ -1477,7 +1836,23 @@ window.addEventListener("keydown", (event) => {
     alternarPausa();
     return;
   }
+  if (event.code === "KeyQ" && !event.repeat) {
+    alternarVisionNocturna();
+    return;
+  }
   if (pausado) return;
+  if (atrapado) {
+    if (event.code === "KeyE" && !event.repeat) iniciarMinijuegoTrampa();
+    if (minijuegoTrampa?.started && minijuegoTrampa.sequence[minijuegoTrampa.index] === event.code) {
+      minijuegoTrampa.index++;
+      document.querySelector("#trap-status").textContent = `Correcto: ${minijuegoTrampa.index}/4`;
+      if (minijuegoTrampa.index === minijuegoTrampa.sequence.length) liberarTrampa("Te liberaste de la trampa antes de que algo llegara.");
+    } else if (minijuegoTrampa?.started && ["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(event.code)) {
+      minijuegoTrampa.index = 0;
+      document.querySelector("#trap-status").textContent = "Secuencia incorrecta. Empieza de nuevo: ARRIBA.";
+    }
+    return;
+  }
   if (
     ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
       event.code,
@@ -1491,10 +1866,10 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "KeyF" && !notaAbierta && !event.repeat) alternarLinterna();
   if (event.code === "KeyL" && !notaAbierta && !event.repeat)
     alternarModoLinterna();
-  if (event.code === "KeyG" && !notaAbierta && !event.repeat) dispararRifle();
+  if (event.code === "KeyJ" && !notaAbierta && !event.repeat) alternarArmaEquipada();
+  if (event.code === "KeyG" && !notaAbierta && !event.repeat) usarArmaEquipada();
   if (event.code === "KeyR" && !notaAbierta && !event.repeat) recargarRifle();
   if (event.code === "KeyH" && !notaAbierta && !event.repeat) usarBotiquin();
-  if (event.code === "KeyK" && !notaAbierta && !event.repeat) usarCuchillo();
 });
 window.addEventListener("keyup", (event) => teclasPulsadas.delete(event.code));
 window.addEventListener("blur", () => teclasPulsadas.clear());
@@ -1505,7 +1880,7 @@ escena.onBeforeRenderObservable.add(() => {
     const controles = estadoEntrada();
      const hambreCritica = state.hunger < 18;
      if (hambreCritica) controles.run = false;
-     if (!notaAbierta && !escapo) actualizarJugador(jugador, controles, delta, mundo);
+     if (!notaAbierta && !escapo && !atrapado) actualizarJugador(jugador, controles, delta, mundo);
     actualizarLinterna();
     if (
       Math.abs(jugador.camera.position.x) > 224 ||
@@ -1514,8 +1889,9 @@ escena.onBeforeRenderObservable.add(() => {
       jugador.camera.position.set(0, 1.7, -1.5);
       mostrarAviso("El bosque termina aquí. Regresaste a la cabaña.");
     }
-    if (state.flashlight) {
-      state.battery = Math.max(0, state.battery - delta * 0.12);
+      if (state.flashlight && !visionNocturnaActiva) {
+       const multiplicador = state.settings.flashlightMode === "long" ? CONFIG.linterna.multiplicadorConsumoHazLargo : 1;
+       state.battery = Math.max(0, state.battery - delta * (100 / CONFIG.linterna.duracionBateriaSegundos) * multiplicador);
       if (!state.battery) {
         configurarLinterna(false);
         mostrarAvisoBateria();
@@ -1527,7 +1903,8 @@ escena.onBeforeRenderObservable.add(() => {
        controles.run && moviendo
          ? Math.max(0, state.energy - delta * 6)
          : Math.min(100, state.energy + delta * (hambreCritica ? 4 : 9));
-     state.hunger = Math.max(0, state.hunger - delta * 0.16);
+      const hambreConBuff = Date.now() < state.satiatedUntil;
+      state.hunger = Math.max(0, state.hunger - delta * (100 / CONFIG.hambre.duracionCompletoSegundos) * (hambreConBuff ? CONFIG.hambre.multiplicadorConsumoCarneCocida : 1));
      if (hambreCritica && performance.now() - ultimoAvisoHambre > 18000) {
        ultimoAvisoHambre = performance.now();
        mostrarAviso("Tienes hambre: no puedes correr y recuperas energía más despacio.");
@@ -1536,7 +1913,9 @@ escena.onBeforeRenderObservable.add(() => {
     actualizarAmbiente();
     actualizarAtmosfera();
      actualizarCriatura(delta, controles);
-     actualizarEco(delta);
+      actualizarEco(delta);
+      actualizarFauna(delta);
+      actualizarTrampas();
      mundo.campfires.forEach((fogata, indice) => {
        if (state.fires[fogata.metadata.id]) fogata.metadata.flame.scaling.y = 1.25 + Math.sin(performance.now() * 0.009 + indice) * 0.28;
      });
@@ -1551,4 +1930,6 @@ escena.onBeforeRenderObservable.add(() => {
   }
 });
 motor.runRenderLoop(() => escena.render());
+// Evita que el navegador muestre el HTML sin estilos durante la carga inicial.
+document.body.classList.add("game-ready");
 window.addEventListener("resize", () => motor.resize());

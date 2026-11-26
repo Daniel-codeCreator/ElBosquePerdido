@@ -3,4 +3,4 @@ export const objetivosCapitulo4 = {
   "police-file": "Capítulo IV: revisa los informes de la comisaría.",
   "gas-record": "Capítulo IV: encuentra el registro de la gasolinera.",
 };
-export const puntosCapitulo4 = { "hospital-file": [-45, -58], "police-file": [-68, -58], "gas-record": [-56, -84] };
+export const puntosCapitulo4 = { "hospital-file": [-45, -65.5], "police-file": [-68, -65.5], "gas-record": [-56, -91.5] };
